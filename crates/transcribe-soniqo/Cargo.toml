@@ -5,6 +5,9 @@ edition = "2024"
 
 [build-dependencies]
 
+[dev-dependencies]
+hypr-data = { workspace = true }
+
 [dependencies]
 hypr-language = { workspace = true }
 owhisper-interface = { workspace = true }

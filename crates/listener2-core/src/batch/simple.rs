@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use hypr_audio_utils::Source;
 use owhisper_client::{
@@ -121,45 +121,58 @@ pub(super) async fn run_soniqo_batch(
             .first()
             .map(hypr_language::Language::bcp47_code);
 
-        let prepared_audio = prepare_soniqo_batch_audio(&file_path)?;
-        let transcribe_path = prepared_audio
-            .as_ref()
-            .map(|file| file.path().to_path_buf())
-            .unwrap_or_else(|| PathBuf::from(&file_path));
+        let prepared_channels = prepare_soniqo_batch_audio(&file_path)?;
         tracing::info!(
             hyprnote.file.path = %file_path,
-            hyprnote.soniqo.transcribe_path = %transcribe_path.display(),
-            hyprnote.soniqo.audio_preprocessed = prepared_audio.is_some(),
+            hyprnote.soniqo.audio_prepared_channels = prepared_channels.len(),
             "soniqo_batch_transcription_start"
         );
 
-        let transcribed = tokio::task::spawn_blocking(move || {
-            let _prepared_audio = prepared_audio;
-            hypr_transcribe_soniqo::transcribe_file(model, transcribe_path, language.as_deref())
-        })
-        .await
-        .map_err(|e| crate::BatchFailure::DirectRequestFailed {
-            provider: "soniqo".to_string(),
-            message: format!("Soniqo transcription task failed: {e}"),
-        })?
-        .map_err(|e| {
-            let raw_error = e.to_string();
-            crate::BatchFailure::DirectRequestFailed {
+        let channel_count = prepared_channels.len() as u32;
+        let mut transcripts = Vec::with_capacity(prepared_channels.len());
+        for prepared_channel in prepared_channels {
+            let channel_idx = prepared_channel.channel_idx as i32;
+            let transcribe_path = prepared_channel.path().to_path_buf();
+            let language = language.clone();
+            tracing::info!(
+                hyprnote.soniqo.channel = channel_idx,
+                hyprnote.soniqo.transcribe_path = %transcribe_path.display(),
+                "soniqo_batch_channel_transcription_start"
+            );
+
+            let transcribed = tokio::task::spawn_blocking(move || {
+                let _prepared_channel = prepared_channel;
+                hypr_transcribe_soniqo::transcribe_file(model, transcribe_path, language.as_deref())
+            })
+            .await
+            .map_err(|e| crate::BatchFailure::DirectRequestFailed {
                 provider: "soniqo".to_string(),
-                message: format_user_friendly_error(&raw_error),
-            }
-        })?;
+                message: format!("Soniqo transcription task failed: {e}"),
+            })?
+            .map_err(|e| {
+                let raw_error = e.to_string();
+                crate::BatchFailure::DirectRequestFailed {
+                    provider: "soniqo".to_string(),
+                    message: format_user_friendly_error(&raw_error),
+                }
+            })?;
 
-        tracing::info!(
-            hyprnote.stt.transcript_chars = transcribed.text.chars().count(),
-            hyprnote.stt.duration_seconds = transcribed.duration_seconds,
-            "soniqo_batch_transcription_completed"
-        );
+            tracing::info!(
+                hyprnote.soniqo.channel = channel_idx,
+                hyprnote.stt.transcript_chars = transcribed.text.chars().count(),
+                hyprnote.stt.duration_seconds = transcribed.duration_seconds,
+                hyprnote.stt.aligned_words = transcribed.words.len(),
+                "soniqo_batch_channel_transcription_completed"
+            );
+            transcripts.push((channel_idx, transcribed));
+        }
 
-        let response = hypr_transcribe_soniqo::batch_response_from_text(
+        tracing::info!("soniqo_batch_transcription_completed");
+
+        let response = hypr_transcribe_soniqo::batch_response_from_transcripts(
             model,
-            transcribed.text,
-            transcribed.duration_seconds,
+            transcripts,
+            channel_count,
         );
 
         Ok(BatchRunOutput {
@@ -172,7 +185,18 @@ pub(super) async fn run_soniqo_batch(
     .await
 }
 
-fn prepare_soniqo_batch_audio(path: &str) -> crate::Result<Option<tempfile::NamedTempFile>> {
+struct PreparedSoniqoChannel {
+    channel_idx: usize,
+    file: tempfile::NamedTempFile,
+}
+
+impl PreparedSoniqoChannel {
+    fn path(&self) -> &Path {
+        self.file.path()
+    }
+}
+
+fn prepare_soniqo_batch_audio(path: &str) -> crate::Result<Vec<PreparedSoniqoChannel>> {
     let source = hypr_audio_utils::source_from_path(path).map_err(|err| {
         let raw_error = err.to_string();
         crate::BatchFailure::AudioMetadataReadFailed {
@@ -182,16 +206,6 @@ fn prepare_soniqo_batch_audio(path: &str) -> crate::Result<Option<tempfile::Name
     let channels = u16::from(source.channels()).max(1) as usize;
     let sample_rate = u32::from(source.sample_rate());
 
-    if channels == 1 && sample_rate == SONIQO_BATCH_SAMPLE_RATE {
-        tracing::info!(
-            hyprnote.file.path = %path,
-            hyprnote.audio.channels = channels,
-            hyprnote.audio.sample_rate_hz = sample_rate,
-            "soniqo_batch_audio_passthrough"
-        );
-        return Ok(None);
-    }
-
     let samples =
         hypr_audio_utils::resample_audio(source, SONIQO_BATCH_SAMPLE_RATE).map_err(|err| {
             crate::BatchFailure::DirectRequestFailed {
@@ -199,10 +213,34 @@ fn prepare_soniqo_batch_audio(path: &str) -> crate::Result<Option<tempfile::Name
                 message: format_user_friendly_error(&err.to_string()),
             }
         })?;
-    let mono_samples = hypr_audio_utils::mono_frames(samples.into_iter(), channels)
-        .map(|sample| sample.clamp(-1.0, 1.0))
-        .collect::<Vec<_>>();
+    let channel_samples = if channels <= 1 {
+        vec![samples]
+    } else {
+        hypr_audio_utils::deinterleave(&samples, channels)
+    };
 
+    let mut prepared_channels = Vec::with_capacity(channel_samples.len());
+    for (channel_idx, samples) in channel_samples.into_iter().enumerate() {
+        let prepared = write_soniqo_channel_file(&samples)?;
+        tracing::info!(
+            hyprnote.file.path = %path,
+            hyprnote.soniqo.prepared_path = %prepared.path().display(),
+            hyprnote.audio.source_channel = channel_idx,
+            hyprnote.audio.source_channels = channels,
+            hyprnote.audio.source_sample_rate_hz = sample_rate,
+            hyprnote.audio.prepared_sample_count = samples.len(),
+            "soniqo_batch_audio_channel_prepared"
+        );
+        prepared_channels.push(PreparedSoniqoChannel {
+            channel_idx,
+            file: prepared,
+        });
+    }
+
+    Ok(prepared_channels)
+}
+
+fn write_soniqo_channel_file(samples: &[f32]) -> crate::Result<tempfile::NamedTempFile> {
     let prepared = tempfile::Builder::new()
         .prefix("soniqo-batch-mono-")
         .suffix(".wav")
@@ -224,9 +262,9 @@ fn prepare_soniqo_batch_audio(path: &str) -> crate::Result<Option<tempfile::Name
             message: format!("Failed to write temporary Soniqo audio file: {err}"),
         }
     })?;
-    for sample in mono_samples.iter().copied() {
+    for sample in samples.iter().copied() {
         writer
-            .write_sample(sample)
+            .write_sample(sample.clamp(-1.0, 1.0))
             .map_err(|err| crate::BatchFailure::DirectRequestFailed {
                 provider: "soniqo".to_string(),
                 message: format!("Failed to write temporary Soniqo audio sample: {err}"),
@@ -239,16 +277,7 @@ fn prepare_soniqo_batch_audio(path: &str) -> crate::Result<Option<tempfile::Name
             message: format!("Failed to finalize temporary Soniqo audio file: {err}"),
         })?;
 
-    tracing::info!(
-        hyprnote.file.path = %path,
-        hyprnote.soniqo.prepared_path = %prepared.path().display(),
-        hyprnote.audio.source_channels = channels,
-        hyprnote.audio.source_sample_rate_hz = sample_rate,
-        hyprnote.audio.prepared_sample_count = mono_samples.len(),
-        "soniqo_batch_audio_prepared"
-    );
-
-    Ok(Some(prepared))
+    Ok(prepared)
 }
 
 #[cfg(test)]
@@ -256,7 +285,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prepare_soniqo_batch_audio_mixes_stereo_channels() {
+    fn prepare_soniqo_batch_audio_splits_stereo_channels() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("speaker-only.wav");
         let spec = hound::WavSpec {
@@ -273,17 +302,26 @@ mod tests {
         }
         writer.finalize().unwrap();
 
-        let prepared = prepare_soniqo_batch_audio(path.to_str().unwrap())
-            .unwrap()
-            .expect("stereo audio should be prepared");
-        let mut reader = hound::WavReader::open(prepared.path()).unwrap();
+        let prepared = prepare_soniqo_batch_audio(path.to_str().unwrap()).unwrap();
+        assert_eq!(prepared.len(), 2);
+
+        let mut reader = hound::WavReader::open(prepared[0].path()).unwrap();
         assert_eq!(reader.spec().channels, 1);
         assert_eq!(reader.spec().sample_rate, SONIQO_BATCH_SAMPLE_RATE);
+        let direct_mic_max_abs = reader
+            .samples::<f32>()
+            .map(|sample| sample.unwrap().abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            direct_mic_max_abs < 0.01,
+            "direct mic channel should stay isolated"
+        );
 
+        let mut reader = hound::WavReader::open(prepared[1].path()).unwrap();
         let max_abs = reader
             .samples::<f32>()
             .map(|sample| sample.unwrap().abs())
             .fold(0.0f32, f32::max);
-        assert!(max_abs > 0.01, "speaker channel should survive downmix");
+        assert!(max_abs > 0.01, "speaker channel should be preserved");
     }
 }

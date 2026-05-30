@@ -77,14 +77,18 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
     pub async fn check(&self, permission: Permission) -> Result<PermissionStatus, crate::Error> {
         #[cfg(target_os = "macos")]
         {
-            if let Some(status) = self.check_sidecar(permission).await {
+            if self.should_check_with_sidecar(permission)
+                && let Some(status) = self.check_sidecar(permission).await
+            {
                 return Ok(status);
             }
 
-            tracing::warn!(
-                ?permission,
-                "sidecar unavailable, falling back to in-process check"
-            );
+            if self.should_check_with_sidecar(permission) {
+                tracing::warn!(
+                    ?permission,
+                    "sidecar unavailable, falling back to in-process check"
+                );
+            }
         }
 
         match permission {
@@ -97,6 +101,14 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
             Permission::Accessibility => self.check_accessibility().await,
             Permission::InputMonitoring => self.check_input_monitoring().await,
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn should_check_with_sidecar(&self, permission: Permission) -> bool {
+        !matches!(
+            permission,
+            Permission::SystemAudio | Permission::ScreenRecording
+        )
     }
 
     #[cfg(target_os = "macos")]
@@ -498,9 +510,16 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
 
     async fn request_system_audio(&self) -> Result<(), crate::Error> {
         let audio = self.require_audio()?;
+
+        #[cfg(target_os = "macos")]
+        self.log_system_audio_debug_state("before_probe");
+
         let stop = audio.play_silence();
         let result = audio.probe_speaker();
         let _ = stop.send(());
+
+        #[cfg(target_os = "macos")]
+        self.log_system_audio_debug_state("after_probe");
 
         if let Err(error) = result {
             #[cfg(target_os = "macos")]
@@ -517,6 +536,27 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
         }
 
         Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn log_system_audio_debug_state(&self, stage: &'static str) {
+        let configured_bundle_id = self.manager.config().identifier.as_str();
+        let pid = std::process::id() as i32;
+        let current_bundle_id = hypr_bundle::bundle_id_for_pid(pid);
+        let ancestor_bundle_id = hypr_bundle::get_ancestor_bundle_id();
+        let raw_status = hypr_tcc::audio_capture_permission_status();
+        let status = PermissionStatus::from(raw_status);
+
+        tracing::info!(
+            stage,
+            pid,
+            configured_bundle_id,
+            current_bundle_id = ?current_bundle_id,
+            ancestor_bundle_id = ?ancestor_bundle_id,
+            raw_status,
+            ?status,
+            "system_audio_permission_debug"
+        );
     }
 
     async fn request_screen_recording(&self) -> Result<(), crate::Error> {
@@ -627,28 +667,55 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
     async fn reset_tcc(&self, service: &str) {
         use tauri_plugin_shell::ShellExt;
 
-        let bundle_id = if cfg!(debug_assertions) {
-            match hypr_bundle::get_ancestor_bundle_id() {
-                Some(id) => {
-                    tracing::info!(service, bundle_id = %id, "resolving_ancestor_bundle_id");
-                    id
+        let configured_bundle_id = self.manager.config().identifier.clone();
+        let mut bundle_ids = vec![configured_bundle_id.clone()];
+
+        if cfg!(debug_assertions)
+            && let Some(ancestor_bundle_id) = hypr_bundle::get_ancestor_bundle_id()
+        {
+            tracing::info!(
+                service,
+                bundle_id = %ancestor_bundle_id,
+                "resolved_ancestor_bundle_id"
+            );
+
+            if ancestor_bundle_id != configured_bundle_id {
+                bundle_ids.push(ancestor_bundle_id);
+            }
+        }
+
+        for bundle_id in bundle_ids {
+            let output = self
+                .manager
+                .shell()
+                .command("tccutil")
+                .args(["reset", service, &bundle_id])
+                .output()
+                .await;
+
+            match output {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::info!(
+                        service,
+                        bundle_id = %bundle_id,
+                        status = ?output.status,
+                        stdout = %stdout,
+                        stderr = %stderr,
+                        "tcc_reset_completed"
+                    );
                 }
-                None => {
-                    tracing::warn!(service, "skipping_tcc_reset");
-                    return;
+                Err(error) => {
+                    tracing::warn!(
+                        service,
+                        bundle_id = %bundle_id,
+                        %error,
+                        "tcc_reset_failed"
+                    );
                 }
             }
-        } else {
-            self.manager.config().identifier.clone()
-        };
-
-        let _ = self
-            .manager
-            .shell()
-            .command("tccutil")
-            .args(["reset", service, &bundle_id])
-            .output()
-            .await;
+        }
     }
 }
 

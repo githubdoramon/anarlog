@@ -185,6 +185,17 @@ pub struct ModelDownloadState {
 pub struct FileTranscript {
     pub text: String,
     pub duration_seconds: f64,
+    #[serde(default)]
+    pub words: Vec<AlignedWord>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlignedWord {
+    pub word: String,
+    pub start: f64,
+    pub end: f64,
+    pub confidence: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,22 +415,83 @@ pub fn batch_response_from_text(
     text: String,
     duration_seconds: f64,
 ) -> batch::Response {
-    let duration_seconds = duration_seconds.max(0.05);
-    let metadata = metadata_json(model, duration_seconds, 1);
-    let words = batch_words_from_text(&text, duration_seconds, 0);
+    batch_response_from_transcript(
+        model,
+        FileTranscript {
+            text,
+            duration_seconds,
+            words: Vec::new(),
+        },
+        0,
+        1,
+    )
+}
+
+pub fn batch_response_from_transcript(
+    model: SoniqoModel,
+    transcript: FileTranscript,
+    channel: i32,
+    channel_count: u32,
+) -> batch::Response {
+    batch_response_from_transcripts(model, vec![(channel, transcript)], channel_count)
+}
+
+pub fn batch_response_from_transcripts(
+    model: SoniqoModel,
+    transcripts: Vec<(i32, FileTranscript)>,
+    channel_count: u32,
+) -> batch::Response {
+    let duration_seconds = transcripts
+        .iter()
+        .map(|(_, transcript)| transcript.duration_seconds)
+        .fold(0.05, f64::max);
+    let metadata = metadata_json(model, duration_seconds, channel_count);
 
     batch::Response {
         metadata,
         results: batch::Results {
-            channels: vec![batch::Channel {
-                alternatives: vec![batch::Alternatives {
-                    transcript: text,
-                    confidence: 1.0,
-                    words,
-                }],
-            }],
+            channels: transcripts
+                .into_iter()
+                .map(|(channel, transcript)| {
+                    let words = batch_words_from_transcript(&transcript, channel);
+                    batch::Channel {
+                        alternatives: vec![batch::Alternatives {
+                            transcript: transcript.text,
+                            confidence: 1.0,
+                            words,
+                        }],
+                    }
+                })
+                .collect(),
         },
     }
+}
+
+fn batch_words_from_transcript(transcript: &FileTranscript, channel: i32) -> Vec<batch::Word> {
+    if transcript.words.is_empty() {
+        return batch_words_from_text(
+            &transcript.text,
+            transcript.duration_seconds.max(0.05),
+            channel,
+        );
+    }
+
+    transcript
+        .words
+        .iter()
+        .map(|word| {
+            let start = word.start.max(0.0);
+            batch::Word {
+                punctuated_word: Some(word.word.clone()),
+                word: word.word.clone(),
+                start,
+                end: word.end.max(start),
+                confidence: word.confidence,
+                channel,
+                speaker: None,
+            }
+        })
+        .collect()
 }
 
 fn metadata(model: SoniqoModel) -> stream::Metadata {
@@ -528,6 +600,8 @@ mod platform {
     struct FileTranscriptionPayload {
         text: String,
         duration_seconds: f64,
+        #[serde(default)]
+        words: Vec<AlignedWord>,
         error: Option<String>,
     }
 
@@ -608,6 +682,7 @@ mod platform {
         Ok(FileTranscript {
             text: result.text,
             duration_seconds: result.duration_seconds,
+            words: result.words,
         })
     }
 
@@ -789,6 +864,113 @@ mod tests {
     }
 
     #[test]
+    fn batch_response_uses_aligned_words_when_present() {
+        let response = batch_response_from_transcript(
+            SoniqoModel::ParakeetBatch,
+            FileTranscript {
+                text: "hello world".to_string(),
+                duration_seconds: 5.0,
+                words: vec![
+                    AlignedWord {
+                        word: "hello".to_string(),
+                        start: 1.25,
+                        end: 1.75,
+                        confidence: 0.91,
+                    },
+                    AlignedWord {
+                        word: "world".to_string(),
+                        start: 3.0,
+                        end: 3.4,
+                        confidence: 0.92,
+                    },
+                ],
+            },
+            1,
+            2,
+        );
+
+        let words = &response.results.channels[0].alternatives[0].words;
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[0].word, "hello");
+        assert_eq!(words[0].start, 1.25);
+        assert_eq!(words[0].end, 1.75);
+        assert_eq!(words[0].channel, 1);
+        assert_eq!(words[0].confidence, 0.91);
+        assert_eq!(response.metadata["channels"], 2);
+        assert_eq!(response.metadata["duration"], 5.0);
+    }
+
+    #[test]
+    fn batch_response_falls_back_to_synthetic_words_without_alignment() {
+        let response = batch_response_from_transcript(
+            SoniqoModel::ParakeetBatch,
+            FileTranscript {
+                text: "hello world".to_string(),
+                duration_seconds: 2.0,
+                words: Vec::new(),
+            },
+            1,
+            2,
+        );
+
+        let words = &response.results.channels[0].alternatives[0].words;
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[0].start, 0.0);
+        assert_eq!(words[0].end, 1.0);
+        assert_eq!(words[0].channel, 1);
+        assert_eq!(words[1].start, 1.0);
+        assert_eq!(words[1].end, 2.0);
+    }
+
+    #[test]
+    fn batch_response_preserves_multiple_channels() {
+        let response = batch_response_from_transcripts(
+            SoniqoModel::ParakeetBatch,
+            vec![
+                (
+                    0,
+                    FileTranscript {
+                        text: "mic".to_string(),
+                        duration_seconds: 1.0,
+                        words: vec![AlignedWord {
+                            word: "mic".to_string(),
+                            start: 0.1,
+                            end: 0.4,
+                            confidence: 1.0,
+                        }],
+                    },
+                ),
+                (
+                    1,
+                    FileTranscript {
+                        text: "system".to_string(),
+                        duration_seconds: 2.0,
+                        words: vec![AlignedWord {
+                            word: "system".to_string(),
+                            start: 0.2,
+                            end: 0.8,
+                            confidence: 1.0,
+                        }],
+                    },
+                ),
+            ],
+            2,
+        );
+
+        assert_eq!(response.results.channels.len(), 2);
+        assert_eq!(
+            response.results.channels[0].alternatives[0].words[0].channel,
+            0
+        );
+        assert_eq!(
+            response.results.channels[1].alternatives[0].words[0].channel,
+            1
+        );
+        assert_eq!(response.metadata["channels"], 2);
+        assert_eq!(response.metadata["duration"], 2.0);
+    }
+
+    #[test]
     fn live_response_keeps_source_channel() {
         let partial = LivePartial {
             source: "system".to_string(),
@@ -802,5 +984,30 @@ mod tests {
         };
 
         assert_eq!(channel_index, vec![1, 2]);
+    }
+
+    #[test]
+    #[ignore = "requires local Soniqo Parakeet and Qwen3 forced aligner model assets"]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn parakeet_batch_smoke_returns_aligned_words() {
+        let transcript = transcribe_file(
+            SoniqoModel::ParakeetBatch,
+            hypr_data::english_1::AUDIO_PART2_16000HZ_PATH,
+            Some("en"),
+        )
+        .expect("Parakeet batch transcription should complete");
+
+        assert!(!transcript.text.trim().is_empty());
+        assert!(
+            !transcript.words.is_empty(),
+            "forced alignment should return timestamped words"
+        );
+        assert!(
+            transcript
+                .words
+                .iter()
+                .all(|word| word.end >= word.start && word.start >= 0.0),
+            "aligned word timestamps should be non-negative and ordered"
+        );
     }
 }

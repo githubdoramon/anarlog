@@ -1,4 +1,5 @@
 mod accumulator;
+mod local_diarization;
 mod progressive;
 mod simple;
 
@@ -8,6 +9,7 @@ use owhisper_client::{AdapterKind, OpenAIAdapter};
 
 use crate::{BatchEvent, BatchRuntime};
 
+use local_diarization::diarize_local_batch_output;
 use progressive::run_progressive_batch_session;
 use simple::{run_direct_batch_for_adapter_kind, run_soniqo_batch};
 
@@ -168,7 +170,11 @@ async fn run_batch_inner(
 
     let listen_params = build_listen_params(&params, metadata.channels, metadata.sample_rate);
 
-    match params.provider {
+    let should_diarize = supports_local_diarization(&params, &listen_params);
+    let file_path = params.file_path.clone();
+    let diarization_params = listen_params.clone();
+
+    let result = match params.provider {
         BatchProvider::Am => {
             let adapter_kind = resolve_batch_adapter_kind(&params, &listen_params);
             if supports_progressive_batch(adapter_kind, listen_params.model.as_deref()) {
@@ -198,7 +204,13 @@ async fn run_batch_inner(
                 .expect("all non-special BatchProvider variants have an AdapterKind mapping");
             run_direct_batch_for_adapter_kind(adapter_kind, params, listen_params).await
         }
+    };
+
+    if !should_diarize {
+        return result;
     }
+
+    result.map(|output| diarize_local_batch_output(output, &file_path, &diarization_params))
 }
 
 fn resolve_batch_adapter_kind(
@@ -210,6 +222,21 @@ fn resolve_batch_adapter_kind(
         &listen_params.languages,
         listen_params.model.as_deref(),
     )
+}
+
+fn supports_local_diarization(
+    params: &BatchParams,
+    listen_params: &owhisper_interface::ListenParams,
+) -> bool {
+    match params.provider {
+        BatchProvider::WhisperLocal | BatchProvider::Cactus | BatchProvider::Soniqo => true,
+        BatchProvider::Am => matches!(
+            resolve_batch_adapter_kind(params, listen_params),
+            AdapterKind::Argmax | AdapterKind::Cactus
+        ),
+        BatchProvider::Argmax => true,
+        _ => false,
+    }
 }
 
 fn supports_progressive_batch(adapter_kind: AdapterKind, model: Option<&str>) -> bool {
@@ -371,6 +398,45 @@ mod tests {
         assert!(supports_progressive_batch(
             adapter_kind,
             Some("cactus-whisper-small-int4"),
+        ));
+    }
+
+    #[test]
+    fn local_diarization_applies_to_explicit_and_am_routed_local_providers() {
+        let explicit_soniqo = batch_params(BatchProvider::Soniqo, "soniqo://local");
+        assert!(supports_local_diarization(
+            &explicit_soniqo,
+            &listen_params(Some("soniqo-parakeet-batch")),
+        ));
+
+        let explicit_cactus = batch_params(BatchProvider::Cactus, "http://localhost:50060/v1");
+        assert!(supports_local_diarization(
+            &explicit_cactus,
+            &listen_params(Some("cactus-whisper-small-int4")),
+        ));
+
+        let am_argmax = batch_params(BatchProvider::Am, "http://localhost:50060/v1");
+        assert!(supports_local_diarization(&am_argmax, &listen_params(None)));
+
+        let am_cactus = batch_params(BatchProvider::Am, "http://localhost:50060/v1");
+        assert!(supports_local_diarization(
+            &am_cactus,
+            &listen_params(Some("cactus-whisper-small-int4")),
+        ));
+    }
+
+    #[test]
+    fn local_diarization_does_not_apply_to_am_routed_remote_providers() {
+        let am_openai = batch_params(BatchProvider::Am, "https://api.openai.com/v1");
+        assert!(!supports_local_diarization(
+            &am_openai,
+            &listen_params(Some("gpt-4o-transcribe")),
+        ));
+
+        let am_pyannote = batch_params(BatchProvider::Am, "https://api.pyannote.ai");
+        assert!(!supports_local_diarization(
+            &am_pyannote,
+            &listen_params(None),
         ));
     }
 

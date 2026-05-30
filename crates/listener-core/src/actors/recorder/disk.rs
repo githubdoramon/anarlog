@@ -9,12 +9,16 @@ use hypr_audio_utils::{
 };
 use ractor::ActorProcessingErr;
 
+use crate::actors::SAMPLE_RATE;
+
 use super::into_actor_err;
 
 const FINAL_AUDIO_FILE: &str = "audio.mp3";
 const WAV_FILE: &str = "audio.wav";
 const OGG_FILE: &str = "audio.ogg";
 const FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1000);
+const SILENT_CHANNEL_MIN_SECONDS: usize = 2;
+const SILENT_CHANNEL_PEAK_THRESHOLD: f32 = 1e-5;
 
 pub(super) struct DiskSink {
     writer: Option<hound::WavWriter<BufWriter<File>>>,
@@ -23,6 +27,55 @@ pub(super) struct DiskSink {
     wav_path: PathBuf,
     last_flush: Instant,
     is_stereo: bool,
+    channel_stats: ChannelStats,
+}
+
+#[derive(Default)]
+struct ChannelStats {
+    dual_samples: usize,
+    mic_peak: f32,
+    spk_peak: f32,
+    mic_energy: f64,
+    spk_energy: f64,
+}
+
+impl ChannelStats {
+    fn observe_dual(&mut self, mic: &[f32], spk: &[f32]) {
+        let frames = mic.len().max(spk.len());
+        self.dual_samples += frames;
+
+        for sample in mic.iter().copied().filter(|sample| sample.is_finite()) {
+            self.mic_peak = self.mic_peak.max(sample.abs());
+            self.mic_energy += f64::from(sample * sample);
+        }
+
+        for sample in spk.iter().copied().filter(|sample| sample.is_finite()) {
+            self.spk_peak = self.spk_peak.max(sample.abs());
+            self.spk_energy += f64::from(sample * sample);
+        }
+    }
+
+    fn should_warn_silent_speaker(&self) -> bool {
+        self.dual_samples >= SAMPLE_RATE as usize * SILENT_CHANNEL_MIN_SECONDS
+            && self.mic_peak > SILENT_CHANNEL_PEAK_THRESHOLD
+            && self.spk_peak <= SILENT_CHANNEL_PEAK_THRESHOLD
+    }
+
+    fn mic_rms(&self) -> f64 {
+        self.rms(self.mic_energy)
+    }
+
+    fn spk_rms(&self) -> f64 {
+        self.rms(self.spk_energy)
+    }
+
+    fn rms(&self, energy: f64) -> f64 {
+        if self.dual_samples == 0 {
+            return 0.0;
+        }
+
+        (energy / self.dual_samples as f64).sqrt()
+    }
 }
 
 pub(super) fn create_disk_sink(session_dir: &Path) -> Result<DiskSink, ActorProcessingErr> {
@@ -80,6 +133,7 @@ pub(super) fn create_disk_sink(session_dir: &Path) -> Result<DiskSink, ActorProc
         wav_path,
         last_flush: Instant::now(),
         is_stereo,
+        channel_stats: ChannelStats::default(),
     })
 }
 
@@ -101,6 +155,8 @@ pub(super) fn write_dual(
     mic: &[f32],
     spk: &[f32],
 ) -> Result<(), ActorProcessingErr> {
+    sink.channel_stats.observe_dual(mic, spk);
+
     if let Some(writer) = sink.writer.as_mut() {
         if sink.is_stereo {
             write_interleaved_stereo(writer, mic, spk)?;
@@ -123,6 +179,18 @@ pub(super) fn write_dual(
 }
 
 pub(super) fn finalize_disk_sink(sink: &mut DiskSink) -> Result<(), ActorProcessingErr> {
+    if sink.channel_stats.should_warn_silent_speaker() {
+        tracing::warn!(
+            path = %sink.wav_path.display(),
+            samples = sink.channel_stats.dual_samples,
+            mic_peak = sink.channel_stats.mic_peak,
+            spk_peak = sink.channel_stats.spk_peak,
+            mic_rms = sink.channel_stats.mic_rms(),
+            spk_rms = sink.channel_stats.spk_rms(),
+            "system_audio_channel_silent"
+        );
+    }
+
     finalize_writer(&mut sink.writer, Some(&sink.wav_path))?;
     finalize_writer(&mut sink.writer_mic, None)?;
     finalize_writer(&mut sink.writer_spk, None)?;
@@ -302,5 +370,27 @@ mod tests {
 
         assert!(session_dir.join(WAV_FILE).exists());
         assert!(!session_dir.join(FINAL_AUDIO_FILE).exists());
+    }
+
+    #[test]
+    fn channel_stats_warns_when_dual_speaker_channel_is_silent() {
+        let mut stats = ChannelStats::default();
+        let mic = vec![0.1; SAMPLE_RATE as usize * SILENT_CHANNEL_MIN_SECONDS];
+        let spk = vec![0.0; mic.len()];
+
+        stats.observe_dual(&mic, &spk);
+
+        assert!(stats.should_warn_silent_speaker());
+    }
+
+    #[test]
+    fn channel_stats_does_not_warn_when_speaker_has_signal() {
+        let mut stats = ChannelStats::default();
+        let mic = vec![0.1; SAMPLE_RATE as usize * SILENT_CHANNEL_MIN_SECONDS];
+        let spk = vec![0.01; mic.len()];
+
+        stats.observe_dual(&mic, &spk);
+
+        assert!(!stats.should_warn_silent_speaker());
     }
 }

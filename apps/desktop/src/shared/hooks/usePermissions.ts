@@ -27,7 +27,9 @@ export function usePermission(type: Permission) {
     onSuccess: async () => {
       if (type === "systemAudio" || type === "screenRecording") {
         setOptimisticStatus("authorized");
-        setTimeout(() => void status.refetch(), 1000);
+        setTimeout(() => {
+          void status.refetch().finally(() => setOptimisticStatus(null));
+        }, 1000);
         return;
       }
       setOptimisticStatus(null);
