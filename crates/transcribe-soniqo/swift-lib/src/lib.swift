@@ -249,7 +249,15 @@ private struct ModelDownloadPayload: Codable {
 private struct FileTranscriptionPayload: Codable {
   var text: String
   var durationSeconds: Double
+  var words: [AlignedWordPayload]
   var error: String?
+}
+
+private struct AlignedWordPayload: Codable {
+  var word: String
+  var start: Double
+  var end: Double
+  var confidence: Double
 }
 
 private struct LivePartialPayload: Codable {
@@ -316,6 +324,8 @@ private actor SoniqoBridge {
 
   private var loadedModels: [SpeechModelKind: LoadedSpeechModel] = [:]
   private var modelTasks: [SpeechModelKind: Task<LoadedSpeechModel, Error>] = [:]
+  private var forcedAligner: Qwen3ForcedAligner?
+  private var forcedAlignerTask: Task<Qwen3ForcedAligner, Error>?
   private var downloadStates: [SpeechModelKind: ModelDownloadPayload] = [:]
   private var activeStreamingSessions: [TranscriptSource: StreamingSession] = [:]
 
@@ -504,11 +514,17 @@ private actor SoniqoBridge {
         sampleRate: 16000,
         language: trimmedLanguage.isEmpty ? nil : trimmedLanguage
       )
+      let words = await alignedWords(
+        audio: audio,
+        text: text,
+        language: alignmentLanguageName(trimmedLanguage)
+      )
 
       return encodeJSON(
         FileTranscriptionPayload(
           text: text,
           durationSeconds: Double(audio.count) / 16000.0,
+          words: words,
           error: nil
         )
       )
@@ -517,9 +533,100 @@ private actor SoniqoBridge {
         FileTranscriptionPayload(
           text: "",
           durationSeconds: 0,
+          words: [],
           error: error.localizedDescription
         )
       )
+    }
+  }
+
+  private func alignedWords(audio: [Float], text: String, language: String) async
+    -> [AlignedWordPayload]
+  {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+      return []
+    }
+
+    do {
+      let aligner = try await ensureForcedAlignerLoaded()
+      return aligner.align(
+        audio: audio,
+        text: trimmed,
+        sampleRate: 16000,
+        language: language
+      ).map { word in
+        AlignedWordPayload(
+          word: word.text,
+          start: Double(word.startTime),
+          end: Double(word.endTime),
+          confidence: 1.0
+        )
+      }
+    } catch {
+      return []
+    }
+  }
+
+  private func ensureForcedAlignerLoaded() async throws -> Qwen3ForcedAligner {
+    if let forcedAligner {
+      return forcedAligner
+    }
+
+    if let task = forcedAlignerTask {
+      let loaded = try await task.value
+      forcedAligner = loaded
+      return loaded
+    }
+
+    let task = Task.detached(priority: .utility) {
+      try await Qwen3ForcedAligner.fromPretrained()
+    }
+    forcedAlignerTask = task
+    do {
+      let loaded = try await task.value
+      forcedAligner = loaded
+      forcedAlignerTask = nil
+      return loaded
+    } catch {
+      forcedAlignerTask = nil
+      throw error
+    }
+  }
+
+  private func alignmentLanguageName(_ language: String) -> String {
+    let code = language.trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(separator: "-")
+      .first
+      .map(String.init)?
+      .lowercased()
+
+    switch code {
+    case "bg": return "Bulgarian"
+    case "cs": return "Czech"
+    case "da": return "Danish"
+    case "de": return "German"
+    case "el": return "Greek"
+    case "es": return "Spanish"
+    case "et": return "Estonian"
+    case "fi": return "Finnish"
+    case "fr": return "French"
+    case "hr": return "Croatian"
+    case "hu": return "Hungarian"
+    case "it": return "Italian"
+    case "lt": return "Lithuanian"
+    case "lv": return "Latvian"
+    case "mt": return "Maltese"
+    case "nl": return "Dutch"
+    case "pl": return "Polish"
+    case "pt": return "Portuguese"
+    case "ro": return "Romanian"
+    case "ru": return "Russian"
+    case "sk": return "Slovak"
+    case "sl": return "Slovenian"
+    case "sv": return "Swedish"
+    case "uk": return "Ukrainian"
+    default: return "English"
     }
   }
 
