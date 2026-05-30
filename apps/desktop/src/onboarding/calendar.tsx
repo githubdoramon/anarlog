@@ -429,8 +429,7 @@ function OutlookCalendarProvider({ onSignIn }: { onSignIn: () => void }) {
 
 function GoogleCalendarProvider({ onSignIn }: { onSignIn: () => void }) {
   const auth = useAuth();
-  const { isPro, isReady, upgradeToPro } = useBillingAccess();
-  const { data: connections, isPending, isError } = useConnections(isPro);
+  const { data: connections, isPending, isError } = useConnections();
   const [isHovered, setHovered] = useState(false);
   const providerConnections = useMemo(
     () =>
@@ -447,17 +446,12 @@ function GoogleCalendarProvider({ onSignIn }: { onSignIn: () => void }) {
       return;
     }
 
-    if (!isPro) {
-      upgradeToPro();
-      return;
-    }
-
     void openOnboardingIntegrationUrl(
       GOOGLE_PROVIDER?.nangoIntegrationId,
       undefined,
       "connect",
     );
-  }, [auth.session, isPro, onSignIn, upgradeToPro]);
+  }, [auth.session, onSignIn]);
 
   if (!GOOGLE_PROVIDER) {
     return null;
@@ -487,9 +481,7 @@ function GoogleCalendarProvider({ onSignIn }: { onSignIn: () => void }) {
         onMouseLeave={() => setHovered(false)}
         onFocus={() => setHovered(true)}
         onBlur={() => setHovered(false)}
-        disabled={
-          isSignedIn && (isPending || (auth.session !== null && !isReady))
-        }
+        disabled={isSignedIn && isPending}
         className={
           isSignedIn
             ? "flex items-center gap-3 border border-neutral-200 bg-white text-stone-800 shadow-[0_2px_6px_rgba(87,83,78,0.08),0_10px_18px_-10px_rgba(87,83,78,0.22)] hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white"
@@ -512,7 +504,7 @@ function GoogleCalendarProvider({ onSignIn }: { onSignIn: () => void }) {
               <div className="flex flex-col items-start justify-center">
                 <p className="text-md font-normal text-neutral-900">Google</p>
                 <span className="text-xs font-normal text-neutral-500">
-                  Only in Pro
+                  Connect account
                 </span>
               </div>
             </motion.span>

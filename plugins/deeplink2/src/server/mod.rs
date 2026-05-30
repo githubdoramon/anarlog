@@ -107,6 +107,16 @@ fn ui_content(deep_link: &DeepLink) -> (bool, &'static str, &'static str) {
             "Subscription updated",
             "Click the button below to return to the app.",
         ),
+        DeepLink::GoogleCalendarCallback(s) if s.code.is_some() => (
+            true,
+            "Google Calendar authorized",
+            "Click the button below to return to the app.",
+        ),
+        DeepLink::GoogleCalendarCallback(_) => (
+            false,
+            "Google Calendar authorization failed",
+            "Please close this window and try again.",
+        ),
         DeepLink::IntegrationCallback(s) if s.status == "success" => (
             true,
             "Connected successfully",

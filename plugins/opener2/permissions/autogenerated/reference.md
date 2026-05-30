@@ -1,11 +1,11 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for opener2 commands.
 
 #### This default permission set includes the following:
 
-- `allow-open-url`
 - `allow-open-path`
+- `allow-open-url`
 - `allow-reveal-item-in-dir`
 
 ## Permission Table

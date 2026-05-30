@@ -7,8 +7,6 @@ pub use error::*;
 pub use ext::*;
 pub use feature::*;
 
-pub type ManagedState = hypr_analytics::AnalyticsClient;
-
 const PLUGIN_NAME: &str = "flag";
 
 fn make_specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
@@ -31,8 +29,6 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tauri::Manager;
-
     #[test]
     fn export_types() {
         const OUTPUT_FILE: &str = "./js/bindings.gen.ts";
@@ -55,15 +51,7 @@ mod test {
         ctx.config_mut().identifier = "com.hyprnote.dev".to_string();
         ctx.config_mut().version = Some("1.0.0".to_string());
 
-        builder
-            .plugin(init())
-            .setup(|app| {
-                let client = hypr_analytics::AnalyticsClientBuilder::default().build();
-                app.manage(client);
-                Ok(())
-            })
-            .build(ctx)
-            .unwrap()
+        builder.plugin(init()).build(ctx).unwrap()
     }
 
     #[tokio::test]

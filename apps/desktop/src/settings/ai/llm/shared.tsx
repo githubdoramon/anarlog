@@ -11,7 +11,6 @@ import {
 } from "@lobehub/icons";
 import type { ReactNode } from "react";
 
-import { env } from "~/env";
 import { AnarlogProviderIcon } from "~/settings/ai/shared";
 import {
   type ProviderRequirement,
@@ -38,9 +37,9 @@ const _PROVIDERS = [
   {
     id: "hyprnote",
     displayName: "Anarlog",
-    badge: "Recommended",
+    badge: null,
     icon: <AnarlogProviderIcon />,
-    baseUrl: new URL("/llm", env.VITE_API_URL).toString(),
+    baseUrl: undefined,
     requirements: [
       { kind: "requires_auth" },
       { kind: "requires_entitlement", entitlement: "pro" },

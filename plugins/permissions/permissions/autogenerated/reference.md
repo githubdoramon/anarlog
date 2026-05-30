@@ -1,11 +1,11 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for permissions commands.
 
 #### This default permission set includes the following:
 
-- `allow-open-permission`
 - `allow-check-permission`
+- `allow-open-permission`
 - `allow-request-permission`
 - `allow-reset-permission`
 

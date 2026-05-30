@@ -475,10 +475,10 @@
           "markdownDescription": "Denies the status command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-is-repo`\n- `allow-init`\n- `allow-status`\n- `allow-add`\n- `allow-reset`\n- `allow-commit`\n- `allow-log`\n- `allow-add-remote`\n- `allow-list-remotes`\n- `allow-fetch`\n- `allow-push`\n- `allow-pull`\n- `allow-check-conflicts`\n- `allow-abort-merge`\n- `allow-get-current-branch`",
+          "description": "Default permissions for git commands.\n#### This default permission set includes:\n\n- `allow-abort-merge`\n- `allow-add`\n- `allow-add-remote`\n- `allow-check-conflicts`\n- `allow-commit`\n- `allow-fetch`\n- `allow-get-current-branch`\n- `allow-init`\n- `allow-is-repo`\n- `allow-list-remotes`\n- `allow-log`\n- `allow-pull`\n- `allow-push`\n- `allow-reset`\n- `allow-status`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-is-repo`\n- `allow-init`\n- `allow-status`\n- `allow-add`\n- `allow-reset`\n- `allow-commit`\n- `allow-log`\n- `allow-add-remote`\n- `allow-list-remotes`\n- `allow-fetch`\n- `allow-push`\n- `allow-pull`\n- `allow-check-conflicts`\n- `allow-abort-merge`\n- `allow-get-current-branch`"
+          "markdownDescription": "Default permissions for git commands.\n#### This default permission set includes:\n\n- `allow-abort-merge`\n- `allow-add`\n- `allow-add-remote`\n- `allow-check-conflicts`\n- `allow-commit`\n- `allow-fetch`\n- `allow-get-current-branch`\n- `allow-init`\n- `allow-is-repo`\n- `allow-list-remotes`\n- `allow-log`\n- `allow-pull`\n- `allow-push`\n- `allow-reset`\n- `allow-status`"
         }
       ]
     }

@@ -16,6 +16,10 @@ pub struct HookResult {
 }
 
 pub async fn run_hooks_for_event(config: &HooksConfig, event: HookEvent) -> Vec<HookResult> {
+    if std::env::var("HYPR_ENABLE_HOOKS").ok().as_deref() != Some("1") {
+        return vec![];
+    }
+
     let condition_key = event.condition_key();
     let cli_args = event.cli_args();
 

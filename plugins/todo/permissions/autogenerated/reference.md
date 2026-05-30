@@ -1,21 +1,21 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for todo commands.
 
 #### This default permission set includes the following:
 
 - `allow-authorization-status`
-- `allow-request-full-access`
-- `allow-list-todo-lists`
-- `allow-fetch-todos`
-- `allow-read-path`
-- `allow-create-todo`
 - `allow-complete-todo`
+- `allow-create-todo`
 - `allow-delete-todo`
+- `allow-fetch-todos`
+- `allow-github-issue-detail`
+- `allow-github-issue-state`
 - `allow-linear-list-teams`
 - `allow-linear-list-tickets`
-- `allow-github-issue-state`
-- `allow-github-issue-detail`
+- `allow-list-todo-lists`
+- `allow-read-path`
+- `allow-request-full-access`
 
 ## Permission Table
 

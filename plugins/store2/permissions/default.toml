@@ -1,3 +1,13 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-save", "allow-get-bool", "allow-get-number", "allow-get-str", "allow-set-bool", "allow-set-number", "allow-set-str"]
+description = "Default permissions for store2 commands."
+permissions = [
+  "allow-get-bool",
+  "allow-get-number",
+  "allow-get-str",
+  "allow-save",
+  "allow-set-bool",
+  "allow-set-number",
+  "allow-set-str",
+]

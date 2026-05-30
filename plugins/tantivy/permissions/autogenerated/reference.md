@@ -1,15 +1,15 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for tantivy commands.
 
 #### This default permission set includes the following:
 
-- `allow-search`
-- `allow-reindex`
 - `allow-add-document`
+- `allow-reindex`
+- `allow-remove-document`
+- `allow-search`
 - `allow-update-document`
 - `allow-update-documents`
-- `allow-remove-document`
 
 ## Permission Table
 

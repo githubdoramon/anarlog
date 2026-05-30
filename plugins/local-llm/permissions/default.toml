@@ -1,14 +1,16 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for local-llm commands."
 permissions = [
-    "allow-models-dir",
-    "allow-is-model-downloading",
-    "allow-is-model-downloaded",
-    "allow-download-model",
-    "allow-cancel-download",
-    "allow-delete-model",
-    "allow-list-downloaded-model",
-    "allow-list-supported-model",
-    "allow-list-custom-models",
-    "allow-server-url",
+  "allow-cancel-download",
+  "allow-delete-model",
+  "allow-download-model",
+  "allow-is-model-downloaded",
+  "allow-is-model-downloading",
+  "allow-list-custom-models",
+  "allow-list-downloaded-model",
+  "allow-list-supported-model",
+  "allow-models-dir",
+  "allow-server-url",
 ]

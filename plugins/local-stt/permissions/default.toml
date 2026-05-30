@@ -1,17 +1,19 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for local-stt commands."
 permissions = [
-    "allow-models-dir",
-    "allow-is-model-downloaded",
-    "allow-is-model-downloading",
-    "allow-download-model",
-    "allow-cancel-download",
-    "allow-delete-model",
-    "allow-start-server",
-    "allow-stop-server",
-    "allow-get-server-for-model",
-    "allow-get-servers",
-    "allow-list-supported-models",
-    "allow-list-supported-languages",
-    "allow-cactus-models-dir",
+  "allow-cactus-models-dir",
+  "allow-cancel-download",
+  "allow-delete-model",
+  "allow-download-model",
+  "allow-get-server-for-model",
+  "allow-get-servers",
+  "allow-is-model-downloaded",
+  "allow-is-model-downloading",
+  "allow-list-supported-languages",
+  "allow-list-supported-models",
+  "allow-models-dir",
+  "allow-start-server",
+  "allow-stop-server",
 ]

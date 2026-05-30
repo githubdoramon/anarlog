@@ -1,8 +1,10 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for permissions commands."
 permissions = [
-    "allow-open-permission",
-    "allow-check-permission",
-    "allow-request-permission",
-    "allow-reset-permission",
+  "allow-check-permission",
+  "allow-open-permission",
+  "allow-request-permission",
+  "allow-reset-permission",
 ]

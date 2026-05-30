@@ -319,10 +319,10 @@
           "markdownDescription": "Denies the set_fake_window_bounds command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-set-fake-window-bounds`\n- `allow-remove-fake-window`",
+          "description": "Default permissions for overlay commands.\n#### This default permission set includes:\n\n- `allow-remove-fake-window`\n- `allow-set-fake-window-bounds`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-set-fake-window-bounds`\n- `allow-remove-fake-window`"
+          "markdownDescription": "Default permissions for overlay commands.\n#### This default permission set includes:\n\n- `allow-remove-fake-window`\n- `allow-set-fake-window-bounds`"
         }
       ]
     }

@@ -307,10 +307,10 @@
           "markdownDescription": "Denies the run_event_hooks command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-run-event-hooks`",
+          "description": "Default permissions for hooks commands.\n#### This default permission set includes:\n\n- `allow-run-event-hooks`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-run-event-hooks`"
+          "markdownDescription": "Default permissions for hooks commands.\n#### This default permission set includes:\n\n- `allow-run-event-hooks`"
         }
       ]
     }

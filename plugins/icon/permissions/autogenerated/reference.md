@@ -1,12 +1,13 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for icon commands.
 
 #### This default permission set includes the following:
 
-- `allow-set-dock-icon`
-- `allow-reset-dock-icon`
 - `allow-get-icon`
+- `allow-reset-dock-icon`
+- `allow-set-dock-icon`
+- `allow-set-notification-badge`
 - `allow-set-recording-indicator`
 
 ## Permission Table

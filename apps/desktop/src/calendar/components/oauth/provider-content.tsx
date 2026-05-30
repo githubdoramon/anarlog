@@ -14,7 +14,6 @@ import {
 import { ReconnectRequiredIndicator } from "./status";
 
 import { useAuth } from "~/auth";
-import { useBillingAccess } from "~/auth/billing";
 import { useConnections } from "~/auth/useConnections";
 import type { CalendarProvider } from "~/calendar/components/shared";
 import { openIntegrationUrl } from "~/shared/integration";
@@ -27,8 +26,7 @@ export function OAuthProviderContent({
   returnTo?: string;
 }) {
   const auth = useAuth();
-  const { isPro, upgradeToPro } = useBillingAccess();
-  const { data: connections, isError } = useConnections(isPro);
+  const { data: connections, isError } = useConnections();
   const providerConnections = useMemo(
     () =>
       connections?.filter(
@@ -53,30 +51,18 @@ export function OAuthProviderContent({
       <div className="pt-1 pb-2">
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
-            <span
-              tabIndex={0}
-              className="cursor-not-allowed text-xs text-neutral-400 opacity-50"
+            <button
+              type="button"
+              onClick={auth.signIn}
+              className="cursor-pointer text-xs text-neutral-600 underline transition-colors hover:text-neutral-900"
             >
               Connect {config.displayName} Calendar
-            </span>
+            </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             Sign in to connect your calendar
           </TooltipContent>
         </Tooltip>
-      </div>
-    );
-  }
-
-  if (!isPro) {
-    return (
-      <div className="pt-1 pb-2">
-        <button
-          onClick={upgradeToPro}
-          className="cursor-pointer text-xs text-neutral-600 underline transition-colors hover:text-neutral-900"
-        >
-          Upgrade to connect
-        </button>
       </div>
     );
   }

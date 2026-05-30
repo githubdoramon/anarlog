@@ -85,6 +85,23 @@ impl TranscribeServiceBuilder {
             .model_path
             .expect("TranscribeServiceBuilder requires model_path");
 
+        match crate::service::repair_whisper_special_tokens(&model_path) {
+            Ok(true) => {
+                tracing::warn!(
+                    hyprnote.model.path = %model_path.display(),
+                    "cactus_repaired_incomplete_whisper_special_tokens"
+                );
+            }
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(
+                    hyprnote.model.path = %model_path.display(),
+                    error = %error,
+                    "cactus_repair_whisper_special_tokens_failed"
+                );
+            }
+        }
+
         let manager = ModelManagerBuilder::default()
             .register("default", &model_path)
             .default_model("default")

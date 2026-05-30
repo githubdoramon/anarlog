@@ -331,10 +331,10 @@
           "markdownDescription": "Denies the logs_dir command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-logs-dir`\n- `allow-do-log`\n- `allow-log-content`",
+          "description": "Default permissions for tracing commands.\n#### This default permission set includes:\n\n- `allow-do-log`\n- `allow-log-content`\n- `allow-logs-dir`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-logs-dir`\n- `allow-do-log`\n- `allow-log-content`"
+          "markdownDescription": "Default permissions for tracing commands.\n#### This default permission set includes:\n\n- `allow-do-log`\n- `allow-log-content`\n- `allow-logs-dir`"
         }
       ]
     }

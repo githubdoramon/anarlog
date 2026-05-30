@@ -16,7 +16,6 @@ import { createTracedFetch, tracedFetch } from "../traced-fetch";
 
 import { useAuth } from "~/auth";
 import { useBillingAccess } from "~/auth/billing";
-import { env } from "~/env";
 import { type ProviderId, PROVIDERS } from "~/settings/ai/llm/shared";
 import { providerRowId } from "~/settings/ai/shared";
 import {
@@ -207,7 +206,7 @@ const resolveLLMConnection = (params: {
       conn: {
         providerId,
         modelId,
-        baseUrl: baseUrl ?? new URL("/llm", env.VITE_API_URL).toString(),
+        baseUrl,
         apiKey: session.access_token,
       },
       status: { status: "success", providerId, isHosted: true },
@@ -227,10 +226,9 @@ export const useFeedbackLanguageModel = (): LanguageModelV3 => {
   accessTokenRef.current = session?.access_token;
 
   return useMemo(() => {
-    const baseUrl = new URL("/support/llm", env.VITE_API_URL).toString();
     const provider = createOpenRouter({
       fetch: createAuthFetch(tauriFetch, () => accessTokenRef.current),
-      baseURL: baseUrl,
+      baseURL: "http://127.0.0.1:0/support/llm",
       apiKey: session?.access_token ?? "CANT_BE_EMPTY",
     });
     return wrapWithThinkingMiddleware(provider.chat("unused"));

@@ -13,7 +13,7 @@ pub use app_info::AppInfo;
 pub use app_new::AppNew;
 pub use help_report_bug::HelpReportBug;
 pub use help_suggest_feature::HelpSuggestFeature;
-pub use tray_check_update::{TrayCheckUpdate, UpdateMenuState};
+pub use tray_check_update::TrayCheckUpdate;
 pub use tray_open::TrayOpen;
 pub use tray_quit::TrayQuit;
 pub use tray_settings::TraySettings;

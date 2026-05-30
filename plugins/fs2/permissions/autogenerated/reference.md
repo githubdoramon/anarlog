@@ -1,12 +1,11 @@
 ## Default Permission
 
-Default permissions for the fs2 plugin
+Default permissions for fs2 commands.
 
 #### This default permission set includes the following:
 
 - `allow-read-text-file`
 - `allow-remove`
-- `allow-write-text-file`
 
 ## Permission Table
 

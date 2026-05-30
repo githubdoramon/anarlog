@@ -3,9 +3,6 @@ use hypr_apple_todo::types::{
 };
 use hypr_ticket_interface::{CollectionPage, TicketPage};
 
-use tauri::Manager;
-use tauri_plugin_auth::AuthPluginExt;
-
 use crate::error::Error;
 use crate::read_path::{ReadPath, ReadPathResult};
 
@@ -98,67 +95,27 @@ pub async fn read_path<R: tauri::Runtime>(
             }
         }
         ReadPath::LinearTeams { connection_id } => {
-            let config = app.state::<crate::PluginConfig>();
-            let token = require_access_token(&app)?;
-            crate::fetch::linear_list_teams(
-                &config.api_base_url,
-                &token,
-                connection_id,
-                limit,
-                cursor,
-            )
-            .await
-            .map(ReadPathResult::Collections)
+            let _ = (app, connection_id, limit, cursor);
+            Err(Error::RemoteDisabled)
         }
         ReadPath::LinearTickets {
             connection_id,
             team_id,
         } => {
-            let config = app.state::<crate::PluginConfig>();
-            let token = require_access_token(&app)?;
-            crate::fetch::linear_list_tickets(
-                &config.api_base_url,
-                &token,
-                connection_id,
-                team_id,
-                None,
-                limit,
-                cursor,
-            )
-            .await
-            .map(ReadPathResult::Tickets)
+            let _ = (app, connection_id, team_id, limit, cursor);
+            Err(Error::RemoteDisabled)
         }
         ReadPath::GithubRepos { connection_id } => {
-            let config = app.state::<crate::PluginConfig>();
-            let token = require_access_token(&app)?;
-            crate::fetch::github_list_repos(
-                &config.api_base_url,
-                &token,
-                connection_id,
-                limit,
-                cursor,
-            )
-            .await
-            .map(ReadPathResult::Collections)
+            let _ = (app, connection_id, limit, cursor);
+            Err(Error::RemoteDisabled)
         }
         ReadPath::GithubTickets {
             connection_id,
             owner,
             repo,
         } => {
-            let config = app.state::<crate::PluginConfig>();
-            let token = require_access_token(&app)?;
-            crate::fetch::github_list_tickets(
-                &config.api_base_url,
-                &token,
-                connection_id,
-                owner,
-                repo,
-                limit,
-                cursor,
-            )
-            .await
-            .map(ReadPathResult::Tickets)
+            let _ = (app, connection_id, owner, repo, limit, cursor);
+            Err(Error::RemoteDisabled)
         }
     }
 }
@@ -219,10 +176,8 @@ pub async fn linear_list_teams<R: tauri::Runtime>(
     limit: Option<u32>,
     cursor: Option<String>,
 ) -> Result<CollectionPage, Error> {
-    let config = app.state::<crate::PluginConfig>();
-    let token = require_access_token(&app)?;
-    crate::fetch::linear_list_teams(&config.api_base_url, &token, &connection_id, limit, cursor)
-        .await
+    let _ = (app, connection_id, limit, cursor);
+    Err(Error::RemoteDisabled)
 }
 
 #[tauri::command]
@@ -235,18 +190,8 @@ pub async fn linear_list_tickets<R: tauri::Runtime>(
     limit: Option<u32>,
     cursor: Option<String>,
 ) -> Result<TicketPage, Error> {
-    let config = app.state::<crate::PluginConfig>();
-    let token = require_access_token(&app)?;
-    crate::fetch::linear_list_tickets(
-        &config.api_base_url,
-        &token,
-        &connection_id,
-        &team_id,
-        query,
-        limit,
-        cursor,
-    )
-    .await
+    let _ = (app, connection_id, team_id, query, limit, cursor);
+    Err(Error::RemoteDisabled)
 }
 
 #[tauri::command]
@@ -256,7 +201,8 @@ pub async fn github_issue_state(
     repo: String,
     number: u64,
 ) -> Result<crate::github_state::GitHubIssueState, Error> {
-    crate::github_state::fetch_public(&owner, &repo, number).await
+    let _ = (owner, repo, number);
+    Err(Error::RemoteDisabled)
 }
 
 #[tauri::command]
@@ -266,7 +212,8 @@ pub async fn github_issue_detail(
     repo: String,
     number: u64,
 ) -> Result<hypr_github_issues::Issue, Error> {
-    crate::github_state::fetch_issue_detail(&owner, &repo, number).await
+    let _ = (owner, repo, number);
+    Err(Error::RemoteDisabled)
 }
 
 #[tauri::command]
@@ -276,13 +223,6 @@ pub async fn github_issue_comments(
     repo: String,
     number: u64,
 ) -> Result<Vec<hypr_github_issues::IssueComment>, Error> {
-    crate::github_state::fetch_issue_comments(&owner, &repo, number).await
-}
-
-fn require_access_token<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<String, Error> {
-    let token = app.access_token().map_err(|e| Error::Auth(e.to_string()))?;
-    match token {
-        Some(t) if !t.is_empty() => Ok(t),
-        _ => Err(Error::Auth("not authenticated".to_string())),
-    }
+    let _ = (owner, repo, number);
+    Err(Error::RemoteDisabled)
 }

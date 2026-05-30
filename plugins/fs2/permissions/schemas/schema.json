@@ -331,10 +331,10 @@
           "markdownDescription": "Denies the write_text_file command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the fs2 plugin\n#### This default permission set includes:\n\n- `allow-read-text-file`\n- `allow-remove`\n- `allow-write-text-file`",
+          "description": "Default permissions for fs2 commands.\n#### This default permission set includes:\n\n- `allow-read-text-file`\n- `allow-remove`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the fs2 plugin\n#### This default permission set includes:\n\n- `allow-read-text-file`\n- `allow-remove`\n- `allow-write-text-file`"
+          "markdownDescription": "Default permissions for fs2 commands.\n#### This default permission set includes:\n\n- `allow-read-text-file`\n- `allow-remove`"
         }
       ]
     }

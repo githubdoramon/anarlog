@@ -331,10 +331,10 @@
           "markdownDescription": "Denies the stop command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-stop`\n- `allow-set-volume`",
+          "description": "Default permissions for sfx commands.\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-set-volume`\n- `allow-stop`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-stop`\n- `allow-set-volume`"
+          "markdownDescription": "Default permissions for sfx commands.\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-set-volume`\n- `allow-stop`"
         }
       ]
     }

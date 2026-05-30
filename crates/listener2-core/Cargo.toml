@@ -17,6 +17,7 @@ hypr-transcribe-soniqo = { workspace = true }
 
 bytes = { workspace = true }
 hound = { workspace = true }
+tempfile = { workspace = true }
 
 owhisper-client = { workspace = true, features = ["local"] }
 owhisper-interface = { workspace = true }

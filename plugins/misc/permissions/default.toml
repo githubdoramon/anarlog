@@ -1,8 +1,17 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for misc commands."
 permissions = [
-    "allow-get-git-hash",
-    "allow-get-fingerprint",
-    "allow-get-device-info",
-    "allow-opinionated-md-to-html",
+  "allow-audio-delete",
+  "allow-audio-exist",
+  "allow-audio-import",
+  "allow-audio-open",
+  "allow-audio-path",
+  "allow-delete-session-folder",
+  "allow-get-device-info",
+  "allow-get-fingerprint",
+  "allow-get-git-hash",
+  "allow-opinionated-md-to-html",
+  "allow-reveal-session-in-finder",
 ]

@@ -1,8 +1,10 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for dictation commands."
 permissions = [
-  "allow-show",
   "allow-hide",
   "allow-set-phase",
+  "allow-show",
   "allow-update-amplitude",
 ]

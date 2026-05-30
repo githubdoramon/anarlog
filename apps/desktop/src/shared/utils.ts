@@ -13,9 +13,9 @@ export const getScheme = async (): Promise<string> => {
   const schemes: Record<string, string> = {
     "com.hyprnote.stable": "hyprnote",
     "com.hyprnote.staging": "hyprnote-staging",
-    "com.hyprnote.dev": "hypr",
+    "com.hyprnote.dev": "char",
   };
-  return schemes[id] ?? "hypr";
+  return schemes[id] ?? "char";
 };
 
 type DesktopFlowPath =

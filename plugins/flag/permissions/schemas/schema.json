@@ -307,10 +307,10 @@
           "markdownDescription": "Denies the is_enabled command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-is-enabled`",
+          "description": "Default permissions for flag commands.\n#### This default permission set includes:\n\n- `allow-is-enabled`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-is-enabled`"
+          "markdownDescription": "Default permissions for flag commands.\n#### This default permission set includes:\n\n- `allow-is-enabled`"
         }
       ]
     }

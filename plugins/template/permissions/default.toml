@@ -1,8 +1,10 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for template commands."
 permissions = [
+  "allow-get-template-source",
   "allow-render",
   "allow-render-custom",
   "allow-render-support",
-  "allow-get-template-source",
 ]

@@ -9,7 +9,6 @@ import type { AIProviderStorage } from "@hypr/store";
 
 import { useAuth } from "~/auth";
 import { useBillingAccess } from "~/auth/billing";
-import { env } from "~/env";
 import { providerRowId } from "~/settings/ai/shared";
 import { type ProviderId } from "~/settings/ai/stt/shared";
 import * as settings from "~/store/tinybase/store/settings";
@@ -103,7 +102,7 @@ export const useSTTConnection = () => {
       return {
         provider: current_stt_provider,
         model: current_stt_model,
-        baseUrl: baseUrl ?? new URL("/stt", env.VITE_API_URL).toString(),
+        baseUrl: baseUrl ?? "",
         apiKey: auth.session.access_token,
       };
     }

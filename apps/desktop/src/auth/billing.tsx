@@ -1,50 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
-  useState,
 } from "react";
 
-import { canStartTrial as canStartTrialApi } from "@hypr/api-client";
-import { createClient } from "@hypr/api-client/client";
-import { commands as authCommands } from "@hypr/plugin-auth";
-import { commands as openerCommands } from "@hypr/plugin-opener2";
-import { openUrlWithInstruction } from "@hypr/plugin-windows";
-import {
-  type BillingInfo,
-  deriveBillingInfo,
-  type SupabaseJwtPayload,
-} from "@hypr/supabase";
-
-import { TrialEndedDialog } from "../billing/trial-ended-dialog";
-import { TrialStartedDialog } from "../billing/trial-started-dialog";
-import { env } from "../env";
-import { configurePaidSettings } from "../shared/config/configure-paid-settings";
-import { buildWebAppUrl } from "../shared/utils";
-import { useAuth } from "./context";
-
-import * as settings from "~/store/tinybase/store/settings";
-
-async function getClaimsFromToken(
-  accessToken: string,
-): Promise<SupabaseJwtPayload | null> {
-  const result = await authCommands.decodeClaims(accessToken);
-  if (result.status === "error") {
-    return null;
-  }
-  return {
-    sub: result.data.sub,
-    email: result.data.email ?? undefined,
-    entitlements: result.data.entitlements,
-    subscription_status: result.data.subscription_status,
-    trial_end: result.data.trial_end,
-  };
-}
+type BillingInfo = {
+  entitlements: string[];
+  subscriptionStatus: string | null;
+  isPro: boolean;
+  isLite: boolean;
+  isPaid: boolean;
+  isTrialing: boolean;
+  trialEnd: string | null;
+  trialDaysRemaining: number | null;
+  plan: "free";
+};
 
 type BillingContextValue = BillingInfo & {
   isReady: boolean;
@@ -56,158 +28,33 @@ export type BillingAccess = BillingContextValue;
 
 const BillingContext = createContext<BillingContextValue | null>(null);
 
-const TRIAL_STARTED_SEEN_PREFIX = "anarlog:trial_started_seen:";
-const TRIAL_ENDED_SEEN_PREFIX = "anarlog:trial_ended_seen:";
-
-function readSeen(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function markSeen(key: string): void {
-  try {
-    localStorage.setItem(key, "1");
-  } catch {
-    // ignore — modal will just show again next session
-  }
-}
+const LOCAL_BILLING: BillingInfo = {
+  entitlements: [],
+  subscriptionStatus: null,
+  isPro: false,
+  isLite: false,
+  isPaid: false,
+  isTrialing: false,
+  trialEnd: null,
+  trialDaysRemaining: null,
+  plan: "free",
+};
 
 export function BillingProvider({ children }: { children: ReactNode }) {
-  const auth = useAuth();
-  const settingsStore = settings.UI.useStore(settings.STORE_ID);
-  const { current_llm_provider } = settings.UI.useValues(settings.STORE_ID);
-
-  const claimsQuery = useQuery({
-    queryKey: ["tokenInfo", auth?.session?.access_token ?? ""],
-    queryFn: () => getClaimsFromToken(auth!.session!.access_token),
-    enabled: !!auth?.session?.access_token,
-  });
-
-  const billing = deriveBillingInfo(claimsQuery.data ?? null);
-  const isReady = !claimsQuery.isPending && !claimsQuery.isError;
-
-  const canTrialQuery = useQuery({
-    enabled: !!auth?.session && !billing.isPaid,
-    queryKey: [auth?.session?.user.id ?? "", "canStartTrial"],
-    queryFn: async () => {
-      const headers = auth?.getHeaders();
-      if (!headers) {
-        return false;
-      }
-      const client = createClient({ baseUrl: env.VITE_API_URL, headers });
-      const { data, error } = await canStartTrialApi({ client });
-      if (error) {
-        return false;
-      }
-      return data?.canStartTrial ?? false;
-    },
-  });
-
-  const canStartTrial = useMemo(
-    () => ({
-      data: billing.isPaid ? false : (canTrialQuery.data ?? false),
-      isPending: canTrialQuery.isPending,
-    }),
-    [billing.isPaid, canTrialQuery.data, canTrialQuery.isPending],
-  );
-
-  const upgradeToPro = useCallback(async () => {
-    const url = await buildWebAppUrl("/app/checkout", { period: "monthly" });
-    await openUrlWithInstruction(url, "billing", (u) =>
-      openerCommands.openUrl(u, null),
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!auth?.session?.user.id || !isReady || billing.isPaid) {
-      return;
-    }
-
-    if (current_llm_provider !== "hyprnote") {
-      return;
-    }
-
-    settingsStore?.setValue("current_llm_provider", "");
-    settingsStore?.setValue("current_llm_model", "");
-  }, [
-    auth?.session?.user.id,
-    billing.isPaid,
-    current_llm_provider,
-    isReady,
-    settingsStore,
-  ]);
-
-  const prevIsPaidRef = useRef(billing.isPaid);
-  useEffect(() => {
-    const wasPaid = prevIsPaidRef.current;
-    prevIsPaidRef.current = billing.isPaid;
-
-    if (!wasPaid && billing.isPaid && isReady && settingsStore) {
-      configurePaidSettings(settingsStore);
-    }
-  }, [billing.isPaid, isReady, settingsStore]);
-
-  const [trialStartedOpen, setTrialStartedOpen] = useState(false);
-  const [trialEndedOpen, setTrialEndedOpen] = useState(false);
-  const hasTrial = billing.trialEnd !== null;
-
-  useEffect(() => {
-    const userId = auth?.session?.user.id;
-    if (!userId || !isReady) {
-      return;
-    }
-
-    if (billing.isTrialing) {
-      const key = TRIAL_STARTED_SEEN_PREFIX + userId;
-      if (!readSeen(key)) {
-        setTrialStartedOpen(true);
-        markSeen(key);
-      }
-      return;
-    }
-
-    if (hasTrial && !billing.isPaid) {
-      const key = TRIAL_ENDED_SEEN_PREFIX + userId;
-      if (!readSeen(key)) {
-        setTrialEndedOpen(true);
-        markSeen(key);
-      }
-    }
-  }, [
-    auth?.session?.user.id,
-    billing.isTrialing,
-    hasTrial,
-    billing.isPaid,
-    isReady,
-  ]);
+  const upgradeToPro = useCallback(() => {}, []);
 
   const value = useMemo<BillingContextValue>(
     () => ({
-      ...billing,
-      isReady,
-      canStartTrial,
+      ...LOCAL_BILLING,
+      isReady: true,
+      canStartTrial: { data: false, isPending: false },
       upgradeToPro,
     }),
-    [billing, isReady, canStartTrial, upgradeToPro],
+    [upgradeToPro],
   );
 
   return (
-    <BillingContext.Provider value={value}>
-      {children}
-      <TrialStartedDialog
-        open={trialStartedOpen}
-        onOpenChange={setTrialStartedOpen}
-        trialDaysRemaining={billing.trialDaysRemaining}
-      />
-      <TrialEndedDialog
-        open={trialEndedOpen}
-        onOpenChange={setTrialEndedOpen}
-        onUpgrade={upgradeToPro}
-      />
-    </BillingContext.Provider>
+    <BillingContext.Provider value={value}>{children}</BillingContext.Provider>
   );
 }
 

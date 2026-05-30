@@ -1,32 +1,32 @@
 ## Default Permission
 
-Default permissions for the fs-sync plugin
+Default permissions for fs-sync commands.
 
 #### This default permission set includes the following:
 
-- `allow-deserialize`
-- `allow-write-json-batch`
-- `allow-write-document-batch`
-- `allow-read-document-batch`
-- `allow-list-folders`
-- `allow-move-session`
-- `allow-create-folder`
-- `allow-rename-folder`
-- `allow-delete-folder`
-- `allow-audio-exist`
-- `allow-audio-delete`
-- `allow-audio-import`
-- `allow-audio-source-metadata`
-- `allow-audio-path`
-- `allow-session-dir`
-- `allow-load-session-content`
-- `allow-delete-session-folder`
-- `allow-scan-and-read`
-- `allow-chat-dir`
-- `allow-entity-dir`
-- `allow-attachment-save`
 - `allow-attachment-list`
 - `allow-attachment-remove`
+- `allow-attachment-save`
+- `allow-audio-delete`
+- `allow-audio-exist`
+- `allow-audio-import`
+- `allow-audio-path`
+- `allow-audio-source-metadata`
+- `allow-chat-dir`
+- `allow-create-folder`
+- `allow-delete-folder`
+- `allow-delete-session-folder`
+- `allow-deserialize`
+- `allow-entity-dir`
+- `allow-list-folders`
+- `allow-load-session-content`
+- `allow-move-session`
+- `allow-read-document-batch`
+- `allow-rename-folder`
+- `allow-scan-and-read`
+- `allow-session-dir`
+- `allow-write-document-batch`
+- `allow-write-json-batch`
 
 ## Permission Table
 

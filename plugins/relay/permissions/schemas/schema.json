@@ -307,10 +307,10 @@
           "markdownDescription": "Denies the relay_result command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the relay plugin\n#### This default permission set includes:\n\n- `allow-relay-result`",
+          "description": "Default permissions for relay commands.\n#### This default permission set includes:\n\n- `allow-relay-result`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the relay plugin\n#### This default permission set includes:\n\n- `allow-relay-result`"
+          "markdownDescription": "Default permissions for relay commands.\n#### This default permission set includes:\n\n- `allow-relay-result`"
         }
       ]
     }

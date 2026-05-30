@@ -1,11 +1,11 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for overlay commands.
 
 #### This default permission set includes the following:
 
-- `allow-set-fake-window-bounds`
 - `allow-remove-fake-window`
+- `allow-set-fake-window-bounds`
 
 ## Permission Table
 

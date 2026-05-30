@@ -1,24 +1,24 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for git commands.
 
 #### This default permission set includes the following:
 
-- `allow-is-repo`
-- `allow-init`
-- `allow-status`
-- `allow-add`
-- `allow-reset`
-- `allow-commit`
-- `allow-log`
-- `allow-add-remote`
-- `allow-list-remotes`
-- `allow-fetch`
-- `allow-push`
-- `allow-pull`
-- `allow-check-conflicts`
 - `allow-abort-merge`
+- `allow-add`
+- `allow-add-remote`
+- `allow-check-conflicts`
+- `allow-commit`
+- `allow-fetch`
 - `allow-get-current-branch`
+- `allow-init`
+- `allow-is-repo`
+- `allow-list-remotes`
+- `allow-log`
+- `allow-pull`
+- `allow-push`
+- `allow-reset`
+- `allow-status`
 
 ## Permission Table
 

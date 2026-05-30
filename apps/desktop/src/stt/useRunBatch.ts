@@ -22,6 +22,7 @@ import {
 
 type RunOptions = {
   handlePersist?: BatchPersistCallback;
+  provider?: string;
   model?: string;
   baseUrl?: string;
   apiKey?: string;
@@ -94,20 +95,22 @@ export const useRunBatch = (sessionId: string) => {
 
   return useCallback(
     async (filePath: string, options?: RunOptions) => {
-      if (!store || !conn || !startTranscription) {
+      const providerId = options?.provider ?? conn?.provider;
+      const modelId = options?.model ?? conn?.model;
+      const baseUrl = options?.baseUrl ?? conn?.baseUrl;
+      const apiKey = options?.apiKey ?? conn?.apiKey;
+
+      if (!store || !providerId || !modelId || !startTranscription) {
         throw new Error(
           "STT connection is not available. Please configure your speech-to-text provider.",
         );
       }
 
-      const provider = getBatchProvider(
-        conn.provider,
-        options?.model ?? conn.model,
-      );
+      const provider = getBatchProvider(providerId, modelId);
 
       if (!provider) {
         throw new Error(
-          `Batch transcription is not supported for provider: ${conn.provider}`,
+          `Batch transcription is not supported for provider: ${providerId}`,
         );
       }
 
@@ -204,7 +207,7 @@ export const useRunBatch = (sessionId: string) => {
               word_id: wordId,
               type: "provider_speaker_index",
               value: JSON.stringify({
-                provider: hint.data.provider ?? conn.provider,
+                provider: hint.data.provider ?? providerId,
                 channel: hint.data.channel ?? word.channel,
                 speaker_index: hint.data.speaker_index,
               }),
@@ -225,9 +228,9 @@ export const useRunBatch = (sessionId: string) => {
         session_id: sessionId,
         provider,
         file_path: filePath,
-        model: options?.model ?? conn.model,
-        base_url: options?.baseUrl ?? conn.baseUrl,
-        api_key: options?.apiKey ?? conn.apiKey,
+        model: modelId,
+        base_url: baseUrl ?? "",
+        api_key: apiKey ?? "",
         keywords: options?.keywords ?? keywords ?? [],
         languages:
           options?.languages ??

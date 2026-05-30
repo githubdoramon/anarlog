@@ -1,6 +1,6 @@
 ## Default Permission
 
-Default permissions for the path2 plugin
+Default permissions for path2 commands.
 
 #### This default permission set includes the following:
 

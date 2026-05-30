@@ -8,11 +8,11 @@ export function configurePaidSettings(store: SettingsStore): void {
 
   if (!currentSttProvider) {
     store.setValue("current_stt_provider", "hyprnote");
-    store.setValue("current_stt_model", "cloud");
+    store.setValue("current_stt_model", "cactus-whisper-small-int4");
   }
 
   if (!currentLlmProvider) {
-    store.setValue("current_llm_provider", "hyprnote");
-    store.setValue("current_llm_model", "Auto");
+    store.setValue("current_llm_provider", "ollama");
+    store.setValue("current_llm_model", "llama3.2");
   }
 }

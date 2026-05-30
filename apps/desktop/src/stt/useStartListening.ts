@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 
 import { commands as analyticsCommands } from "@hypr/plugin-analytics";
+import { commands as fsSyncCommands } from "@hypr/plugin-fs-sync";
 import type { TranscriptStorage } from "@hypr/store";
 
 import { useListener } from "./contexts";
@@ -26,6 +27,36 @@ import {
   getTranscriptionLanguages,
 } from "~/stt/capabilities";
 import { applyLiveTranscriptDelta } from "~/stt/utils";
+
+const AUDIO_PATH_RETRY_COUNT = 10;
+const AUDIO_PATH_RETRY_DELAY_MS = 200;
+
+async function resolveStoppedAudioPath(
+  sessionId: string,
+  eventAudioPath: string | null,
+) {
+  if (eventAudioPath) {
+    return eventAudioPath;
+  }
+
+  for (let attempt = 0; attempt < AUDIO_PATH_RETRY_COUNT; attempt++) {
+    const result = await fsSyncCommands.audioPath(sessionId);
+    if (result.status === "ok" && result.data) {
+      console.info("[listener] resolved stopped audio path", {
+        sessionId,
+        audioPath: result.data,
+        attempt,
+      });
+      return result.data;
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, AUDIO_PATH_RETRY_DELAY_MS),
+    );
+  }
+
+  return null;
+}
 
 export function getPostCaptureAction(
   details: {
@@ -59,9 +90,7 @@ export function useStartListening(sessionId: string) {
 
   const keywords = useKeywords(sessionId);
   const runBatchRef = useRef(runBatch);
-  const canRunBatchRef = useRef(canRunBatchTranscription(conn));
   runBatchRef.current = runBatch;
-  canRunBatchRef.current = canRunBatchTranscription(conn);
 
   const startListening = useCallback(async () => {
     if (!store) {
@@ -72,16 +101,34 @@ export function useStartListening(sessionId: string) {
     const startedAt = Date.now();
     const memoMd = store.getCell("sessions", sessionId, "raw_md");
     const createdAt = new Date().toISOString();
+    const captureConn = conn;
+    const canRunBatchAfterStop = canRunBatchTranscription(captureConn);
 
     const onStopped: OnStoppedCallback = async (_sessionId, details) => {
-      const postCaptureAction = getPostCaptureAction(
-        details,
-        canRunBatchRef.current,
+      const audioPath = await resolveStoppedAudioPath(
+        _sessionId,
+        details.audioPath,
       );
+      const postCaptureAction = getPostCaptureAction(
+        { ...details, audioPath },
+        canRunBatchAfterStop,
+      );
+      console.info("[listener] post-capture action", {
+        sessionId: _sessionId,
+        eventAudioPath: details.audioPath,
+        resolvedAudioPath: audioPath,
+        canRunBatch: canRunBatchAfterStop,
+        action: postCaptureAction,
+      });
 
       if (postCaptureAction === "batch_then_enhance") {
         try {
-          await runBatchRef.current(details.audioPath!);
+          await runBatchRef.current(audioPath!, {
+            provider: captureConn?.provider,
+            model: captureConn?.model,
+            baseUrl: captureConn?.baseUrl,
+            apiKey: captureConn?.apiKey,
+          });
         } catch (error) {
           if (isStoppedTranscriptionError(error)) {
             return;

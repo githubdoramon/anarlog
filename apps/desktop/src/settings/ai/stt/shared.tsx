@@ -10,7 +10,6 @@ import type { ReactNode } from "react";
 
 import type { LocalModel } from "@hypr/plugin-local-stt";
 
-import { env } from "~/env";
 import { AnarlogProviderIcon } from "~/settings/ai/shared";
 import {
   type ProviderRequirement,
@@ -115,10 +114,24 @@ const _PROVIDERS = [
     disabled: false,
     id: "hyprnote",
     displayName: "Anarlog",
-    badge: "Recommended",
+    badge: "Local",
     icon: <AnarlogProviderIcon />,
-    baseUrl: new URL("/stt", env.VITE_API_URL).toString(),
-    models: ["cloud"],
+    baseUrl: undefined,
+    models: [
+      "cactus-whisper-small-int4",
+      "cactus-whisper-small-int4-apple",
+      "cactus-whisper-small-int8",
+      "cactus-whisper-small-int8-apple",
+      "cactus-whisper-medium-int8",
+      "cactus-whisper-medium-int8-apple",
+      "cactus-parakeet-tdt-0.6b-v3-int4",
+      "cactus-parakeet-tdt-0.6b-v3-int4-apple",
+      "cactus-parakeet-tdt-0.6b-v3-int8",
+      "cactus-parakeet-tdt-0.6b-v3-int8-apple",
+      "am-parakeet-v2",
+      "am-parakeet-v3",
+      "am-whisper-large-v3",
+    ],
     requirements: [],
   },
   {

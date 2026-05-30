@@ -1,5 +1,7 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for db commands."
 permissions = [
   "allow-execute",
   "allow-execute-proxy",

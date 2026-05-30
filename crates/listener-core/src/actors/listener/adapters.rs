@@ -349,6 +349,17 @@ async fn flush_soniqo_source(
     session_offset_secs: f64,
     extra: Extra,
 ) -> Result<hypr_transcribe_soniqo::LiveTranscriptionSession, String> {
+    let stats = audio_stats(&samples);
+    tracing::info!(
+        ?source,
+        sample_count = samples.len(),
+        start_s = start,
+        duration_s = duration,
+        rms = stats.rms,
+        peak = stats.peak,
+        "soniqo_live_append_start"
+    );
+
     let joined = tokio::task::spawn_blocking(move || {
         let mut session = session;
         let result = session.append(source, &samples);
@@ -360,7 +371,20 @@ async fn flush_soniqo_source(
     let (session, partials) = joined;
     let partials = partials.map_err(|e| format!("soniqo_live_append_failed: {e}"))?;
 
+    tracing::info!(
+        ?source,
+        partial_count = partials.len(),
+        "soniqo_live_append_result"
+    );
+
     for partial in partials {
+        tracing::info!(
+            ?source,
+            text = %partial.text,
+            is_final = partial.is_final,
+            "soniqo_live_partial"
+        );
+
         let mut response = partial.into_stream_response(model, start, duration);
         response.apply_offset(session_offset_secs);
         response.set_extra(&extra);
@@ -380,6 +404,8 @@ async fn finalize_soniqo_source(
     session_offset_secs: f64,
     extra: Extra,
 ) -> Result<hypr_transcribe_soniqo::LiveTranscriptionSession, String> {
+    tracing::info!(?source, start_s = start, "soniqo_live_finalize_start");
+
     let joined = tokio::task::spawn_blocking(move || {
         let mut session = session;
         let result = session.finalize(source);
@@ -391,7 +417,20 @@ async fn finalize_soniqo_source(
     let (session, partials) = joined;
     let partials = partials.map_err(|e| format!("soniqo_live_finalize_failed: {e}"))?;
 
+    tracing::info!(
+        ?source,
+        partial_count = partials.len(),
+        "soniqo_live_finalize_result"
+    );
+
     for partial in partials {
+        tracing::info!(
+            ?source,
+            text = %partial.text,
+            is_final = partial.is_final,
+            "soniqo_live_final_partial"
+        );
+
         let mut response = partial.into_stream_response(model, start, 0.05);
         response.apply_offset(session_offset_secs);
         response.set_extra(&extra);
@@ -407,6 +446,34 @@ fn i16_bytes_to_f32(bytes: &Bytes) -> Vec<f32> {
         .chunks_exact(2)
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / i16::MAX as f32)
         .collect()
+}
+
+struct AudioStats {
+    rms: f32,
+    peak: f32,
+}
+
+fn audio_stats(samples: &[f32]) -> AudioStats {
+    if samples.is_empty() {
+        return AudioStats {
+            rms: 0.0,
+            peak: 0.0,
+        };
+    }
+
+    let mut sum_squares = 0.0f32;
+    let mut peak = 0.0f32;
+
+    for sample in samples {
+        let abs = sample.abs();
+        sum_squares += sample * sample;
+        peak = peak.max(abs);
+    }
+
+    AudioStats {
+        rms: (sum_squares / samples.len() as f32).sqrt(),
+        peak,
+    }
 }
 
 fn build_listen_params(args: &ListenerArgs) -> owhisper_interface::ListenParams {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::models::PermissionStatus;
 
 #[cfg(target_os = "macos")]
-use block2::StackBlock;
+use block2::RcBlock;
 #[cfg(target_os = "macos")]
 use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio};
 #[cfg(target_os = "macos")]
@@ -470,11 +470,21 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
     async fn request_microphone(&self) -> Result<(), crate::Error> {
         #[cfg(target_os = "macos")]
         {
+            let (tx, rx) = std::sync::mpsc::channel::<bool>();
+
             unsafe {
                 let media_type = AVMediaTypeAudio.unwrap();
-                let block = StackBlock::new(|_granted| {});
-                AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, &block);
+                let completion = RcBlock::new(move |granted: objc2::runtime::Bool| {
+                    let _ = tx.send(granted.as_bool());
+                });
+
+                AVCaptureDevice::requestAccessForMediaType_completionHandler(
+                    media_type,
+                    &completion,
+                );
             }
+
+            let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -489,8 +499,23 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
     async fn request_system_audio(&self) -> Result<(), crate::Error> {
         let audio = self.require_audio()?;
         let stop = audio.play_silence();
-        audio.probe_speaker()?;
+        let result = audio.probe_speaker();
         let _ = stop.send(());
+
+        if let Err(error) = result {
+            #[cfg(target_os = "macos")]
+            {
+                tracing::warn!(%error, "system audio permission prompt did not complete");
+                self.open_system_audio().await?;
+                return Ok(());
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(error.into());
+            }
+        }
+
         Ok(())
     }
 

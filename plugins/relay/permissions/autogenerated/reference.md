@@ -1,6 +1,6 @@
 ## Default Permission
 
-Default permissions for the relay plugin
+Default permissions for relay commands.
 
 #### This default permission set includes the following:
 

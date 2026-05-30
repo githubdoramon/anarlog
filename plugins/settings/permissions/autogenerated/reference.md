@@ -1,18 +1,18 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for settings commands.
 
 #### This default permission set includes the following:
 
-- `allow-global-base`
-- `allow-vault-base`
 - `allow-copy-vault`
+- `allow-global-base`
+- `allow-load`
 - `allow-move-vault`
-- `allow-set-vault-base`
 - `allow-obsidian-vaults`
 - `allow-path`
-- `allow-load`
 - `allow-save`
+- `allow-set-vault-base`
+- `allow-vault-base`
 
 ## Permission Table
 

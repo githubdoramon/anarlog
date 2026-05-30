@@ -331,10 +331,10 @@
           "markdownDescription": "Denies the stop_callback_server command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-get-available-deep-links`\n- `allow-start-callback-server`\n- `allow-stop-callback-server`",
+          "description": "Default permissions for deeplink2 commands.\n#### This default permission set includes:\n\n- `allow-start-callback-server`\n- `allow-stop-callback-server`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-get-available-deep-links`\n- `allow-start-callback-server`\n- `allow-stop-callback-server`"
+          "markdownDescription": "Default permissions for deeplink2 commands.\n#### This default permission set includes:\n\n- `allow-start-callback-server`\n- `allow-stop-callback-server`"
         }
       ]
     }

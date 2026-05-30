@@ -1,18 +1,18 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for local-llm commands.
 
 #### This default permission set includes the following:
 
-- `allow-models-dir`
-- `allow-is-model-downloading`
-- `allow-is-model-downloaded`
-- `allow-download-model`
 - `allow-cancel-download`
 - `allow-delete-model`
+- `allow-download-model`
+- `allow-is-model-downloaded`
+- `allow-is-model-downloading`
+- `allow-list-custom-models`
 - `allow-list-downloaded-model`
 - `allow-list-supported-model`
-- `allow-list-custom-models`
+- `allow-models-dir`
 - `allow-server-url`
 
 ## Permission Table

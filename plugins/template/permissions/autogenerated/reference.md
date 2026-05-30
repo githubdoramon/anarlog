@@ -1,13 +1,13 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for template commands.
 
 #### This default permission set includes the following:
 
+- `allow-get-template-source`
 - `allow-render`
 - `allow-render-custom`
 - `allow-render-support`
-- `allow-get-template-source`
 
 ## Permission Table
 

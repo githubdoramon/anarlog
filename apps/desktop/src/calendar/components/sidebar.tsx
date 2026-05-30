@@ -14,11 +14,11 @@ import { cn } from "@hypr/utils";
 
 import { AppleCalendarSelection } from "./apple/calendar-selection";
 import { AccessPermissionRow, TroubleShootingLink } from "./apple/permission";
+import { GoogleLocalProviderContent } from "./google-local-provider-content";
 import { OAuthProviderContent } from "./oauth/provider-content";
 import { type CalendarProvider, PROVIDERS } from "./shared";
 
 import { useAuth } from "~/auth";
-import { useBillingAccess } from "~/auth/billing";
 import { useConnections } from "~/auth/useConnections";
 import { useNativeContextMenu } from "~/shared/hooks/useNativeContextMenu";
 import { usePermission } from "~/shared/hooks/usePermissions";
@@ -83,8 +83,7 @@ export function CalendarSidebarContent({
 }) {
   const isMacos = platform() === "macos";
   const calendar = usePermission("calendar");
-  const { isPaid } = useBillingAccess();
-  const { data: connections } = useConnections(isPaid);
+  const { data: connections } = useConnections();
 
   const visibleProviders = useMemo(
     () =>
@@ -149,30 +148,19 @@ function ProviderAccordionItem({
   returnTo: string;
 }) {
   const auth = useAuth();
-  const { isPaid, isPro, upgradeToPro } = useBillingAccess();
-  const { data: connections, isPending, isError } = useConnections(isPaid);
+  const { data: connections, isPending, isError } = useConnections();
   const providerConnections =
     connections?.filter(
       (connection) => connection.integration_id === provider.nangoIntegrationId,
     ) ?? [];
 
-  const requiresPro = !!provider.nangoIntegrationId && !isPro;
-
   const canAddAccount =
-    !!provider.nangoIntegrationId &&
-    !!auth.session &&
-    isPaid &&
-    !isPending &&
-    !isError;
+    !!provider.nangoIntegrationId && !!auth.session && !isPending && !isError;
   const shouldConnectOnClick =
     canAddAccount && providerConnections.length === 0;
 
   const handleTriggerClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
-      if (requiresPro) {
-        event.preventDefault();
-        return;
-      }
       if (!shouldConnectOnClick) return;
       event.preventDefault();
       void openIntegrationUrl(
@@ -182,7 +170,7 @@ function ProviderAccordionItem({
         returnTo,
       );
     },
-    [provider.nangoIntegrationId, requiresPro, returnTo, shouldConnectOnClick],
+    [provider.nangoIntegrationId, returnTo, shouldConnectOnClick],
   );
   const handleAddAccount = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -236,9 +224,7 @@ function ProviderAccordionItem({
         }
         className="group grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 rounded-md hover:bg-neutral-50"
       >
-        <AccordionHeader
-          className={cn(["min-w-0", requiresPro && "opacity-60"])}
-        >
+        <AccordionHeader className="min-w-0">
           <AccordionTriggerPrimitive
             className="flex w-full min-w-0 items-center py-3 text-left text-sm font-medium transition-all hover:no-underline"
             onClick={handleTriggerClick}
@@ -257,15 +243,7 @@ function ProviderAccordionItem({
           </AccordionTriggerPrimitive>
         </AccordionHeader>
 
-        {requiresPro ? (
-          <button
-            type="button"
-            onClick={upgradeToPro}
-            className="shrink-0 rounded-full border-2 border-stone-600 bg-stone-800 px-3 py-1 text-xs font-medium text-white shadow-[0_4px_14px_rgba(87,83,78,0.18)] transition-all duration-200 hover:bg-stone-700"
-          >
-            Upgrade to Pro
-          </button>
-        ) : canAddAccount ? (
+        {canAddAccount ? (
           <button
             type="button"
             onClick={handleAddAccount}
@@ -276,47 +254,46 @@ function ProviderAccordionItem({
           </button>
         ) : null}
 
-        {!requiresPro && (
-          <ChevronDown
-            className={cn([
-              "size-4 shrink-0 text-neutral-500 opacity-0 transition-all duration-200 group-hover:opacity-100 focus-within:opacity-100",
-              "group-data-[state=open]/provider:rotate-180",
-            ])}
-          />
-        )}
+        <ChevronDown
+          className={cn([
+            "size-4 shrink-0 text-neutral-500 opacity-0 transition-all duration-200 group-hover:opacity-100 focus-within:opacity-100",
+            "group-data-[state=open]/provider:rotate-180",
+          ])}
+        />
       </div>
-      {!requiresPro && (
-        <AccordionContent className="pb-3">
-          {provider.id === "apple" && (
-            <div className="flex flex-col gap-3">
-              {calendar.status !== "authorized" ? (
-                <AccessPermissionRow
-                  title="Calendar"
-                  status={calendar.status}
-                  isPending={calendar.isPending}
-                  onOpen={calendar.open}
-                  onRequest={calendar.request}
-                  onReset={calendar.reset}
-                />
-              ) : (
-                <AppleCalendarSelection
-                  leftAction={
-                    <TroubleShootingLink
-                      isPending={calendar.isPending}
-                      onOpen={calendar.open}
-                      onRequest={calendar.request}
-                      onReset={calendar.reset}
-                    />
-                  }
-                />
-              )}
-            </div>
-          )}
-          {provider.nangoIntegrationId && (
-            <OAuthProviderContent config={provider} returnTo={returnTo} />
-          )}
-        </AccordionContent>
-      )}
+      <AccordionContent className="pb-3">
+        {provider.id === "apple" && (
+          <div className="flex flex-col gap-3">
+            {calendar.status !== "authorized" ? (
+              <AccessPermissionRow
+                title="Calendar"
+                status={calendar.status}
+                isPending={calendar.isPending}
+                onOpen={calendar.open}
+                onRequest={calendar.request}
+                onReset={calendar.reset}
+              />
+            ) : (
+              <AppleCalendarSelection
+                leftAction={
+                  <TroubleShootingLink
+                    isPending={calendar.isPending}
+                    onOpen={calendar.open}
+                    onRequest={calendar.request}
+                    onReset={calendar.reset}
+                  />
+                }
+              />
+            )}
+          </div>
+        )}
+        {provider.nangoIntegrationId && (
+          <OAuthProviderContent config={provider} returnTo={returnTo} />
+        )}
+        {provider.id === "google" && !provider.nangoIntegrationId && (
+          <GoogleLocalProviderContent config={provider} />
+        )}
+      </AccordionContent>
     </AccordionItem>
   );
 }

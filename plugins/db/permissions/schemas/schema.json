@@ -343,10 +343,10 @@
           "markdownDescription": "Denies the unsubscribe command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-execute`\n- `allow-execute-proxy`\n- `allow-subscribe`\n- `allow-unsubscribe`",
+          "description": "Default permissions for db commands.\n#### This default permission set includes:\n\n- `allow-execute`\n- `allow-execute-proxy`\n- `allow-subscribe`\n- `allow-unsubscribe`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-execute`\n- `allow-execute-proxy`\n- `allow-subscribe`\n- `allow-unsubscribe`"
+          "markdownDescription": "Default permissions for db commands.\n#### This default permission set includes:\n\n- `allow-execute`\n- `allow-execute-proxy`\n- `allow-subscribe`\n- `allow-unsubscribe`"
         }
       ]
     }

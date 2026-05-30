@@ -1,12 +1,12 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for sfx commands.
 
 #### This default permission set includes the following:
 
 - `allow-play`
-- `allow-stop`
 - `allow-set-volume`
+- `allow-stop`
 
 ## Permission Table
 

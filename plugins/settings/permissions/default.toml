@@ -1,3 +1,15 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-global-base", "allow-vault-base", "allow-copy-vault", "allow-move-vault", "allow-set-vault-base", "allow-obsidian-vaults", "allow-path", "allow-load", "allow-save"]
+description = "Default permissions for settings commands."
+permissions = [
+  "allow-copy-vault",
+  "allow-global-base",
+  "allow-load",
+  "allow-move-vault",
+  "allow-obsidian-vaults",
+  "allow-path",
+  "allow-save",
+  "allow-set-vault-base",
+  "allow-vault-base",
+]

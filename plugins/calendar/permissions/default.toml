@@ -1,12 +1,14 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for calendar commands."
 permissions = [
-    "allow-available-providers",
-    "allow-is-provider-enabled",
-    "allow-list-connection-ids",
-    "allow-list-calendars",
-    "allow-list-events",
-    "allow-open-calendar",
-    "allow-create-event",
-    "allow-parse-meeting-link",
+  "allow-available-providers",
+  "allow-create-event",
+  "allow-is-provider-enabled",
+  "allow-list-calendars",
+  "allow-list-connection-ids",
+  "allow-list-events",
+  "allow-open-calendar",
+  "allow-parse-meeting-link",
 ]

@@ -1,12 +1,12 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for dictation commands.
 
 #### This default permission set includes the following:
 
-- `allow-show`
 - `allow-hide`
 - `allow-set-phase`
+- `allow-show`
 - `allow-update-amplitude`
 
 ## Permission Table

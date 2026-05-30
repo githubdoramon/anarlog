@@ -1,7 +1,7 @@
-use crate::{Feature, FlagStrategy, ManagedState};
+use crate::{Feature, FlagStrategy};
 
 pub struct Flag<'a, R: tauri::Runtime, M: tauri::Manager<R>> {
-    manager: &'a M,
+    _manager: &'a M,
     _runtime: std::marker::PhantomData<fn() -> R>,
 }
 
@@ -10,17 +10,8 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Flag<'a, R, M> {
         match feature.strategy() {
             FlagStrategy::Debug => cfg!(debug_assertions),
             FlagStrategy::Hardcoded(v) => v,
-            FlagStrategy::Posthog(key) => self.get_posthog_flag(key).await,
+            FlagStrategy::Posthog(_) => false,
         }
-    }
-
-    async fn get_posthog_flag(&self, flag_key: &str) -> bool {
-        let client = self.manager.state::<ManagedState>();
-        let distinct_id = hypr_host::fingerprint();
-        client
-            .is_feature_enabled(flag_key, &distinct_id)
-            .await
-            .unwrap_or(false)
     }
 }
 
@@ -36,7 +27,7 @@ impl<R: tauri::Runtime, T: tauri::Manager<R>> FlagPluginExt<R> for T {
         Self: Sized,
     {
         Flag {
-            manager: self,
+            _manager: self,
             _runtime: std::marker::PhantomData,
         }
     }

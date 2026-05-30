@@ -1,8 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
-import { disable, enable } from "@tauri-apps/plugin-autostart";
 
-import { commands as analyticsCommands } from "@hypr/plugin-analytics";
 import { commands as listenerCommands } from "@hypr/plugin-transcription";
 import type { General, GeneralStorage } from "@hypr/store";
 
@@ -24,11 +22,9 @@ import * as settings from "~/store/tinybase/store/settings";
 
 function useSettingsForm() {
   const value = useConfigValues([
-    "autostart",
     "auto_start_scheduled_meetings",
     "auto_stop_meetings",
     "notification_detect",
-    "telemetry_consent",
     "ai_language",
     "spoken_languages",
     "current_stt_provider",
@@ -60,11 +56,9 @@ function useSettingsForm() {
 
   const form = useForm({
     defaultValues: {
-      autostart: value.autostart,
       auto_start_scheduled_meetings: value.auto_start_scheduled_meetings,
       auto_stop_meetings: value.auto_stop_meetings,
       notification_detect: value.notification_detect,
-      telemetry_consent: value.telemetry_consent,
       ai_language: value.ai_language,
       spoken_languages: getAdditionalSpokenLanguages(
         value.ai_language,
@@ -92,27 +86,6 @@ function useSettingsForm() {
       };
 
       setPartialValues(normalizedValue);
-
-      if (normalizedValue.autostart) {
-        void enable();
-      } else {
-        void disable();
-      }
-
-      void analyticsCommands.event({
-        event: "settings_changed",
-        autostart: normalizedValue.autostart,
-        auto_start_scheduled_meetings:
-          normalizedValue.auto_start_scheduled_meetings,
-        auto_stop_meetings: normalizedValue.auto_stop_meetings,
-        notification_detect: normalizedValue.notification_detect,
-        telemetry_consent: normalizedValue.telemetry_consent,
-      });
-      void analyticsCommands.setProperties({
-        set: {
-          telemetry_opt_out: normalizedValue.telemetry_consent === false,
-        },
-      });
     },
   });
 
@@ -137,51 +110,27 @@ export function SettingsApp() {
 
   return (
     <div className="flex flex-col gap-8">
-      <form.Field name="autostart">
-        {(autostartField) => (
-          <form.Field name="auto_start_scheduled_meetings">
-            {(autoStartScheduledMeetingsField) => (
-              <form.Field name="auto_stop_meetings">
-                {(autoStopMeetingsField) => (
-                  <form.Field name="telemetry_consent">
-                    {(telemetryConsentField) => (
-                      <AppSettingsView
-                        autostart={{
-                          title: "Start Anarlog at login",
-                          description:
-                            "Always ready without manually launching.",
-                          value: autostartField.state.value,
-                          onChange: (val) => autostartField.handleChange(val),
-                        }}
-                        autoStartScheduledMeetings={{
-                          title: "Start when meeting begins",
-                          description:
-                            "Automatically start listening when an event-backed note reaches its scheduled start time.",
-                          value: autoStartScheduledMeetingsField.state.value,
-                          onChange: (val) =>
-                            autoStartScheduledMeetingsField.handleChange(val),
-                        }}
-                        autoStopMeetings={{
-                          title: "Stop when meeting ends",
-                          description:
-                            "Automatically stop listening when the meeting app releases the microphone.",
-                          value: autoStopMeetingsField.state.value,
-                          onChange: (val) =>
-                            autoStopMeetingsField.handleChange(val),
-                        }}
-                        telemetryConsent={{
-                          title: "Share usage data",
-                          description:
-                            "Send anonymous usage analytics to help improve Anarlog.",
-                          value: telemetryConsentField.state.value,
-                          onChange: (val) =>
-                            telemetryConsentField.handleChange(val),
-                        }}
-                      />
-                    )}
-                  </form.Field>
-                )}
-              </form.Field>
+      <form.Field name="auto_start_scheduled_meetings">
+        {(autoStartScheduledMeetingsField) => (
+          <form.Field name="auto_stop_meetings">
+            {(autoStopMeetingsField) => (
+              <AppSettingsView
+                autoStartScheduledMeetings={{
+                  title: "Start when meeting begins",
+                  description:
+                    "Automatically start listening when an event-backed note reaches its scheduled start time.",
+                  value: autoStartScheduledMeetingsField.state.value,
+                  onChange: (val) =>
+                    autoStartScheduledMeetingsField.handleChange(val),
+                }}
+                autoStopMeetings={{
+                  title: "Stop when meeting ends",
+                  description:
+                    "Automatically stop listening when the meeting app releases the microphone.",
+                  value: autoStopMeetingsField.state.value,
+                  onChange: (val) => autoStopMeetingsField.handleChange(val),
+                }}
+              />
             )}
           </form.Field>
         )}

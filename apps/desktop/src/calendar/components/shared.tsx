@@ -39,7 +39,7 @@ const _PROVIDERS = [
     icon: <Icon icon="logos:google-calendar" width={20} height={20} />,
     platform: "all",
     docsPath: "https://char.com/docs/calendar/gcal",
-    nangoIntegrationId: "google-calendar",
+    nangoIntegrationId: undefined,
   },
   {
     disabled: false,

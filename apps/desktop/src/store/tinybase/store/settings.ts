@@ -1,4 +1,3 @@
-import { disable, enable } from "@tauri-apps/plugin-autostart";
 import { useEffect } from "react";
 import { createBroadcastChannelSynchronizer } from "tinybase/synchronizers/synchronizer-broadcast-channel/with-schemas";
 import * as _UI from "tinybase/ui-react/with-schemas";
@@ -10,7 +9,6 @@ import {
   type ValuesSchema,
 } from "tinybase/with-schemas";
 
-import { commands as analyticsCommands } from "@hypr/plugin-analytics";
 import { commands as detectCommands } from "@hypr/plugin-detect";
 import {
   commands as localSttCommands,
@@ -69,7 +67,7 @@ export const SETTINGS_MAPPING = {
     telemetry_consent: {
       type: "boolean",
       path: ["general", "telemetry_consent"],
-      default: true as boolean,
+      default: false as boolean,
     },
     // Actual values populated via persister load; defaults here are for type inference.
     ai_language: {
@@ -100,22 +98,27 @@ export const SETTINGS_MAPPING = {
     current_llm_provider: {
       type: "string",
       path: ["ai", "current_llm_provider"],
+      default: "ollama" as string,
     },
     current_llm_model: {
       type: "string",
       path: ["ai", "current_llm_model"],
+      default: "llama3.2" as string,
     },
     current_stt_provider: {
       type: "string",
       path: ["ai", "current_stt_provider"],
+      default: "hyprnote" as string,
     },
     current_stt_model: {
       type: "string",
       path: ["ai", "current_stt_model"],
+      default: "cactus-whisper-small-int4" as string,
     },
     cactus_cloud_handoff: {
       type: "boolean",
       path: ["cactus", "cloud_handoff"],
+      default: false as boolean,
     },
     cactus_min_chunk_sec: {
       type: "number",
@@ -294,13 +297,6 @@ type SettingsListeners = {
 };
 
 const SETTINGS_LISTENERS: SettingsListeners = {
-  autostart: (_store, newValue) => {
-    if (newValue) {
-      enable().catch(console.error);
-    } else {
-      disable().catch(console.error);
-    }
-  },
   respect_dnd: (_store, newValue) => {
     detectCommands.setRespectDoNotDisturb(newValue).catch(console.error);
   },
@@ -340,9 +336,6 @@ const SETTINGS_LISTENERS: SettingsListeners = {
     } else {
       localSttCommands.stopServer(null).catch(console.error);
     }
-  },
-  telemetry_consent: (_store, newValue) => {
-    analyticsCommands.setDisabled(!newValue).catch(console.error);
   },
 };
 

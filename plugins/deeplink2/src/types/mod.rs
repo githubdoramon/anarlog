@@ -1,9 +1,11 @@
 mod auth_callback;
 mod billing_refresh;
+mod google_calendar_callback;
 mod integration_callback;
 
 pub use auth_callback::*;
 pub use billing_refresh::*;
+pub use google_calendar_callback::*;
 pub use integration_callback::*;
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,8 @@ pub enum DeepLink {
     AuthCallback(AuthCallbackSearch),
     #[serde(rename = "/billing/refresh")]
     BillingRefresh(BillingRefreshSearch),
+    #[serde(rename = "/google-calendar/callback")]
+    GoogleCalendarCallback(GoogleCalendarCallbackSearch),
     #[serde(rename = "/integration/callback")]
     IntegrationCallback(IntegrationCallbackSearch),
 }
@@ -29,6 +33,7 @@ impl DeepLink {
         match self {
             DeepLink::AuthCallback(_) => "/auth/callback",
             DeepLink::BillingRefresh(_) => "/billing/refresh",
+            DeepLink::GoogleCalendarCallback(_) => "/google-calendar/callback",
             DeepLink::IntegrationCallback(_) => "/integration/callback",
         }
     }
@@ -53,6 +58,9 @@ impl FromStr for DeepLink {
         match full_path.as_str() {
             "auth/callback" => Ok(DeepLink::AuthCallback(serde_qs::from_str(query)?)),
             "billing/refresh" => Ok(DeepLink::BillingRefresh(serde_qs::from_str(query)?)),
+            "google-calendar/callback" => {
+                Ok(DeepLink::GoogleCalendarCallback(serde_qs::from_str(query)?))
+            }
             "integration/callback" => Ok(DeepLink::IntegrationCallback(serde_qs::from_str(query)?)),
             _ => Err(crate::Error::UnknownPath(full_path)),
         }

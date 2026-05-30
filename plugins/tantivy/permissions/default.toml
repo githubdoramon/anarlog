@@ -1,3 +1,12 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-search", "allow-reindex", "allow-add-document", "allow-update-document", "allow-update-documents", "allow-remove-document"]
+description = "Default permissions for tantivy commands."
+permissions = [
+  "allow-add-document",
+  "allow-reindex",
+  "allow-remove-document",
+  "allow-search",
+  "allow-update-document",
+  "allow-update-documents",
+]

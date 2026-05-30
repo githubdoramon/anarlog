@@ -391,10 +391,10 @@
           "markdownDescription": "Denies the parse_meeting_link command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-available-providers`\n- `allow-is-provider-enabled`\n- `allow-list-connection-ids`\n- `allow-list-calendars`\n- `allow-list-events`\n- `allow-open-calendar`\n- `allow-create-event`\n- `allow-parse-meeting-link`",
+          "description": "Default permissions for calendar commands.\n#### This default permission set includes:\n\n- `allow-available-providers`\n- `allow-create-event`\n- `allow-is-provider-enabled`\n- `allow-list-calendars`\n- `allow-list-connection-ids`\n- `allow-list-events`\n- `allow-open-calendar`\n- `allow-parse-meeting-link`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-available-providers`\n- `allow-is-provider-enabled`\n- `allow-list-connection-ids`\n- `allow-list-calendars`\n- `allow-list-events`\n- `allow-open-calendar`\n- `allow-create-event`\n- `allow-parse-meeting-link`"
+          "markdownDescription": "Default permissions for calendar commands.\n#### This default permission set includes:\n\n- `allow-available-providers`\n- `allow-create-event`\n- `allow-is-provider-enabled`\n- `allow-list-calendars`\n- `allow-list-connection-ids`\n- `allow-list-events`\n- `allow-open-calendar`\n- `allow-parse-meeting-link`"
         }
       ]
     }

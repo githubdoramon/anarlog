@@ -5,13 +5,17 @@ import { useScheduleTaskRunCallback } from "tinytick/ui-react";
 
 import { events as deeplink2Events } from "@hypr/plugin-deeplink2";
 import { dismissInstruction } from "@hypr/plugin-windows";
+import { sonnerToast } from "@hypr/ui/components/ui/toast";
 
 import { useAuth } from "~/auth";
+import { connectGoogleCalendarFromCode } from "~/calendar/google-local";
 import { CALENDAR_SYNC_TASK_ID } from "~/services/calendar";
+import * as main from "~/store/tinybase/store/main";
 import { useTabs } from "~/store/zustand/tabs";
 
 export function useDeeplinkHandler() {
   const auth = useAuth();
+  const store = main.UI.useStore(main.STORE_ID);
   const queryClient = useQueryClient();
   const openNew = useTabs((state) => state.openNew);
   const scheduleCalendarSync = useScheduleTaskRunCallback(
@@ -44,6 +48,38 @@ export function useDeeplinkHandler() {
           void auth.refreshSession();
         }
         void dismissInstruction();
+      } else if (payload.to === "/google-calendar/callback") {
+        const { code, error } = payload.search;
+        console.log("[deeplink] google calendar callback received", {
+          hasCode: !!code,
+          error,
+        });
+
+        if (error) {
+          sonnerToast.error(`Google Calendar authorization failed: ${error}`);
+          return;
+        }
+
+        if (!code || !store) {
+          sonnerToast.error("Google Calendar authorization was incomplete");
+          return;
+        }
+
+        void connectGoogleCalendarFromCode({ code, store })
+          .then(() => {
+            void queryClient.invalidateQueries({
+              predicate: (query) => query.queryKey[0] === "integration-status",
+            });
+            openNew({ type: "calendar" });
+          })
+          .catch((e) => {
+            console.error("[deeplink] google calendar connect failed", e);
+            sonnerToast.error(
+              e instanceof Error
+                ? e.message
+                : "Failed to connect Google Calendar",
+            );
+          });
       } else if (payload.to === "/integration/callback") {
         const { integration_id, status, return_to } = payload.search;
         if (status === "success") {
@@ -74,5 +110,5 @@ export function useDeeplinkHandler() {
       }
       void unlisten.then((fn) => fn());
     };
-  }, [auth, openNew, queryClient, scheduleCalendarSync]);
+  }, [auth, openNew, queryClient, scheduleCalendarSync, store]);
 }

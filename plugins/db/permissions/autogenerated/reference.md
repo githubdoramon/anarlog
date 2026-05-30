@@ -1,6 +1,6 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for db commands.
 
 #### This default permission set includes the following:
 

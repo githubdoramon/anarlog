@@ -8,28 +8,18 @@ interface SettingItem {
 }
 
 interface AppSettingsViewProps {
-  autostart: SettingItem;
   autoStartScheduledMeetings: SettingItem;
   autoStopMeetings: SettingItem;
-  telemetryConsent: SettingItem;
 }
 
 export function AppSettingsView({
-  autostart,
   autoStartScheduledMeetings,
   autoStopMeetings,
-  telemetryConsent,
 }: AppSettingsViewProps) {
   return (
     <div>
       <h2 className="mb-4 font-serif text-lg font-semibold">App</h2>
       <div className="flex flex-col gap-4">
-        <SettingRow
-          title={autostart.title}
-          description={autostart.description}
-          checked={autostart.value}
-          onChange={autostart.onChange}
-        />
         <SettingRow
           title={autoStartScheduledMeetings.title}
           description={autoStartScheduledMeetings.description}
@@ -41,12 +31,6 @@ export function AppSettingsView({
           description={autoStopMeetings.description}
           checked={autoStopMeetings.value}
           onChange={autoStopMeetings.onChange}
-        />
-        <SettingRow
-          title={telemetryConsent.title}
-          description={telemetryConsent.description}
-          checked={telemetryConsent.value}
-          onChange={telemetryConsent.onChange}
         />
       </div>
     </div>

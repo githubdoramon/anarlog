@@ -1,3 +1,11 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-decode-claims", "allow-get-item", "allow-set-item", "allow-remove-item", "allow-clear", "allow-get-account-info"]
+description = "Default permissions for auth commands."
+permissions = [
+  "allow-clear",
+  "allow-decode-claims",
+  "allow-get-item",
+  "allow-remove-item",
+  "allow-set-item",
+]

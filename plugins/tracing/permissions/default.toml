@@ -1,3 +1,9 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-logs-dir", "allow-do-log", "allow-log-content"]
+description = "Default permissions for tracing commands."
+permissions = [
+  "allow-do-log",
+  "allow-log-content",
+  "allow-logs-dir",
+]

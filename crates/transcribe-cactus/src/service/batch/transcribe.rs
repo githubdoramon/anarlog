@@ -138,18 +138,51 @@ fn transcribe_chunks(
             (chunk.sample_end - chunk.sample_start) as f64 / TARGET_SAMPLE_RATE as f64;
         progress.update_channel(channel_idx, chunk_start_sec);
 
+        tracing::info!(
+            hyprnote.audio.channel_index = channel_idx,
+            hyprnote.audio.chunk_index = chunk_idx,
+            hyprnote.audio.chunk_start_s = chunk_start_sec,
+            hyprnote.audio.chunk_duration_s = chunk_duration_sec,
+            hyprnote.stt.language = ?options.language,
+            "cactus_chunk_transcription_start"
+        );
+
         let cactus_response = if progress.has_tx() {
             let completed_text: String = all_transcripts.join(" ");
 
             model.transcribe_pcm_with_callback(&pcm_bytes, options, |token| {
+                let raw_token = token.to_string();
+                let removed_tokens = crate::service::transcript_control_tokens(&raw_token);
+                let token = crate::service::clean_transcript_text(&raw_token);
+                if !removed_tokens.is_empty() || raw_token.contains('<') || raw_token.contains('|')
+                {
+                    tracing::warn!(
+                        hyprnote.audio.channel_index = channel_idx,
+                        hyprnote.audio.chunk_index = chunk_idx,
+                        hyprnote.stt.token.raw = %raw_token,
+                        hyprnote.stt.token.cleaned = %token,
+                        hyprnote.stt.token.removed = ?removed_tokens,
+                        "cactus_callback_token_cleaned_or_suspicious"
+                    );
+                } else {
+                    tracing::debug!(
+                        hyprnote.audio.channel_index = channel_idx,
+                        hyprnote.audio.chunk_index = chunk_idx,
+                        hyprnote.stt.token.raw = %raw_token,
+                        "cactus_callback_token"
+                    );
+                }
+
+                if token.is_empty() {
+                    return true;
+                }
+
                 let mut partial = completed_text.clone();
 
-                if !token.is_empty() {
-                    if !partial.is_empty() {
-                        partial.push(' ');
-                    }
-                    partial.push_str(token);
+                if !partial.is_empty() {
+                    partial.push(' ');
                 }
+                partial.push_str(&token);
 
                 let resolved = resolved_audio_for_chunk_progress(
                     chunk_start_sec,
@@ -164,7 +197,47 @@ fn transcribe_chunks(
             model.transcribe_pcm(&pcm_bytes, options)?
         };
 
-        let chunk_text = cactus_response.text.trim().to_string();
+        match serde_json::to_string(&cactus_response) {
+            Ok(response_json) => {
+                tracing::info!(
+                    hyprnote.audio.channel_index = channel_idx,
+                    hyprnote.audio.chunk_index = chunk_idx,
+                    hyprnote.stt.cactus_response = %response_json,
+                    "cactus_full_transcription_response"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    hyprnote.audio.channel_index = channel_idx,
+                    hyprnote.audio.chunk_index = chunk_idx,
+                    error = %error,
+                    "cactus_full_transcription_response_serialize_failed"
+                );
+            }
+        }
+
+        let removed_tokens = crate::service::transcript_control_tokens(&cactus_response.text);
+        let chunk_text = crate::service::clean_transcript_text(&cactus_response.text);
+        if removed_tokens.is_empty() {
+            tracing::info!(
+                hyprnote.audio.channel_index = channel_idx,
+                hyprnote.audio.chunk_index = chunk_idx,
+                hyprnote.stt.response.raw = %cactus_response.text,
+                hyprnote.stt.response.cleaned = %chunk_text,
+                hyprnote.stt.response.confidence = cactus_response.confidence,
+                "cactus_chunk_transcription_result"
+            );
+        } else {
+            tracing::warn!(
+                hyprnote.audio.channel_index = channel_idx,
+                hyprnote.audio.chunk_index = chunk_idx,
+                hyprnote.stt.response.raw = %cactus_response.text,
+                hyprnote.stt.response.cleaned = %chunk_text,
+                hyprnote.stt.response.removed = ?removed_tokens,
+                hyprnote.stt.response.confidence = cactus_response.confidence,
+                "cactus_chunk_transcription_cleaned_control_tokens"
+            );
+        }
         if !chunk_text.is_empty() {
             let mut words = build_batch_words(
                 &chunk_text,
@@ -176,6 +249,7 @@ fn transcribe_chunks(
                 w.start += chunk_start_sec;
                 w.end += chunk_start_sec;
             }
+            let word_count = words.len();
             all_words.extend(words);
 
             if progress.has_tx() {
@@ -187,6 +261,13 @@ fn transcribe_chunks(
                 };
                 let segment_resp = build_segment_stream_response(&seg, metadata, channel_index);
                 if let Some(tx) = progress.event_tx() {
+                    tracing::info!(
+                        hyprnote.audio.channel_index = channel_idx,
+                        hyprnote.audio.chunk_index = chunk_idx,
+                        hyprnote.stt.segment.text = %chunk_text,
+                        hyprnote.stt.segment.word_count = word_count,
+                        "cactus_sse_segment_emit"
+                    );
                     let _ = tx.send(BatchSseMessage::Segment {
                         response: segment_resp,
                     });

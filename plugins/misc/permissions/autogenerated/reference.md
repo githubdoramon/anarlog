@@ -1,13 +1,20 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for misc commands.
 
 #### This default permission set includes the following:
 
-- `allow-get-git-hash`
-- `allow-get-fingerprint`
+- `allow-audio-delete`
+- `allow-audio-exist`
+- `allow-audio-import`
+- `allow-audio-open`
+- `allow-audio-path`
+- `allow-delete-session-folder`
 - `allow-get-device-info`
+- `allow-get-fingerprint`
+- `allow-get-git-hash`
 - `allow-opinionated-md-to-html`
+- `allow-reveal-session-in-finder`
 
 ## Permission Table
 

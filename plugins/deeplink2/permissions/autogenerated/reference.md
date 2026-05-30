@@ -1,10 +1,9 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for deeplink2 commands.
 
 #### This default permission set includes the following:
 
-- `allow-get-available-deep-links`
 - `allow-start-callback-server`
 - `allow-stop-callback-server`
 

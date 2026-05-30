@@ -1,20 +1,20 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for windows commands.
 
 #### This default permission set includes the following:
 
-- `allow-window-show`
-- `allow-window-hide`
 - `allow-window-destroy`
-- `allow-window-navigate`
 - `allow-window-emit-navigate`
-- `allow-window-is-exists`
-- `allow-window-set-frame-animated`
-- `allow-window-save-frame`
-- `allow-window-restore-frame-animated`
 - `allow-window-expand-width`
+- `allow-window-hide`
+- `allow-window-is-exists`
+- `allow-window-navigate`
+- `allow-window-restore-frame-animated`
 - `allow-window-restore-width`
+- `allow-window-save-frame`
+- `allow-window-set-frame-animated`
+- `allow-window-show`
 
 ## Permission Table
 

@@ -8,6 +8,7 @@ default = []
 coreml = ["hypr-onnx/coreml"]
 directml = ["hypr-onnx/directml"]
 [dependencies]
+hypr-audio-utils = { workspace = true }
 hypr-onnx = { workspace = true }
 
 dasp = { workspace = true }

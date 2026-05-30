@@ -307,10 +307,10 @@
           "markdownDescription": "Denies the list_foundation_models command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-list-foundation-models`",
+          "description": "Default permissions for bedrock commands.\n#### This default permission set includes:\n\n- `allow-list-foundation-models`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-list-foundation-models`"
+          "markdownDescription": "Default permissions for bedrock commands.\n#### This default permission set includes:\n\n- `allow-list-foundation-models`"
         }
       ]
     }

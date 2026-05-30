@@ -1,3 +1,7 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the path2 plugin"
-permissions = ["allow-sanitize"]
+description = "Default permissions for path2 commands."
+permissions = [
+  "allow-sanitize",
+]

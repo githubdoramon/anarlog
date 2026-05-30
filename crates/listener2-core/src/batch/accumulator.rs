@@ -55,6 +55,16 @@ impl StreamBatchAccumulator {
                     let state = self.channels.entry(channel_id).or_default();
                     let transcript = alternative.transcript.trim();
 
+                    tracing::info!(
+                        hyprnote.stt.channel_id = channel_id,
+                        hyprnote.stt.segment.start_s = *start,
+                        hyprnote.stt.segment.duration_s = *duration,
+                        hyprnote.stt.segment.from_finalize = *from_finalize,
+                        hyprnote.stt.segment.transcript = %transcript,
+                        hyprnote.stt.segment.word_count = alternative.words.len(),
+                        "stream_batch_accumulator_segment"
+                    );
+
                     if !alternative.words.is_empty() {
                         let mut words = alternative
                             .words
@@ -108,6 +118,24 @@ impl StreamBatchAccumulator {
                 self.terminal_channels = Some(*channels);
             }
             BatchStreamEvent::Result { response } => {
+                for (idx, channel) in response.results.channels.iter().enumerate() {
+                    let transcript = channel
+                        .alternatives
+                        .first()
+                        .map(|alt| alt.transcript.trim())
+                        .unwrap_or_default();
+                    let word_count = channel
+                        .alternatives
+                        .first()
+                        .map(|alt| alt.words.len())
+                        .unwrap_or_default();
+                    tracing::info!(
+                        hyprnote.stt.channel_id = idx,
+                        hyprnote.stt.result.transcript = %transcript,
+                        hyprnote.stt.result.word_count = word_count,
+                        "stream_batch_accumulator_result"
+                    );
+                }
                 self.final_response = Some(response.clone());
             }
             BatchStreamEvent::Error { .. } => {}

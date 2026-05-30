@@ -45,43 +45,6 @@ pub async fn main() {
             None => (None, None),
         };
 
-    let sentry_client = {
-        let dsn = option_env!("SENTRY_DSN");
-
-        if let Some(dsn) = dsn {
-            let release =
-                option_env!("APP_VERSION").map(|v| format!("hyprnote-desktop@{}", v).into());
-
-            let client = sentry::init((
-                dsn,
-                sentry::ClientOptions {
-                    release,
-                    traces_sample_rate: 1.0,
-                    auto_session_tracking: false,
-                    ..Default::default()
-                },
-            ));
-
-            sentry::configure_scope(|scope| {
-                scope.set_tag("service.namespace", "hyprnote");
-                scope.set_tag("service.name", "desktop");
-                scope.set_tag("enduser.pseudo.id", hypr_host::fingerprint());
-                scope.set_user(Some(sentry::User {
-                    id: Some(hypr_host::fingerprint()),
-                    ..Default::default()
-                }));
-            });
-
-            Some(client)
-        } else {
-            None
-        }
-    };
-
-    let _guard = sentry_client
-        .as_ref()
-        .map(|client| tauri_plugin_sentry::minidump::init(client));
-
     let audio: std::sync::Arc<dyn hypr_audio_actual::AudioProvider> =
         create_audio_provider(&context.config().identifier);
 
@@ -109,7 +72,6 @@ pub async fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_opener2::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_analytics::init())
         .plugin(tauri_plugin_agent::init())
         .plugin(tauri_plugin_db::init(db.clone()))
         .plugin(tauri_plugin_bedrock::init())
@@ -123,7 +85,6 @@ pub async fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sidecar2::init())
         .plugin(tauri_plugin_permissions::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_deeplink2::init())
         .plugin(tauri_plugin_fs_sync::init())
@@ -171,16 +132,7 @@ pub async fn main() {
                     .as_ref()
                     .map(|ctx| ctx.supervisor.get_cell()),
             },
-        ))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--background"]),
-        ))
-        .plugin(tauri_plugin_updater2::init());
-
-    if let Some(client) = sentry_client.as_ref() {
-        builder = builder.plugin(tauri_plugin_sentry::init_with_no_injection(client));
-    }
+        ));
 
     #[cfg(any(debug_assertions, feature = "devtools"))]
     {
@@ -202,7 +154,6 @@ pub async fn main() {
         .on_window_event(tauri_plugin_windows::on_window_event)
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            let app_clone = app_handle.clone();
 
             specta_builder.mount_events(&app_handle);
 

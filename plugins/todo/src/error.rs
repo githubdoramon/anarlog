@@ -4,6 +4,8 @@ pub enum Error {
     AppleTodo(#[from] hypr_apple_todo::Error),
     #[error("unsupported platform")]
     UnsupportedPlatform,
+    #[error("remote todo integrations are disabled in this build")]
+    RemoteDisabled,
     #[error("invalid read path: {0}")]
     InvalidReadPath(String),
     #[error("auth error: {0}")]

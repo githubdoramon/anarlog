@@ -1,12 +1,12 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for tracing commands.
 
 #### This default permission set includes the following:
 
-- `allow-logs-dir`
 - `allow-do-log`
 - `allow-log-content`
+- `allow-logs-dir`
 
 ## Permission Table
 

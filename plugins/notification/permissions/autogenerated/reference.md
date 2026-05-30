@@ -1,11 +1,11 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for notification commands.
 
 #### This default permission set includes the following:
 
-- `allow-show-notification`
 - `allow-clear-notifications`
+- `allow-show-notification`
 
 ## Permission Table
 

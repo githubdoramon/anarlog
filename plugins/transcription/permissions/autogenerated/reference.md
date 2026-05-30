@@ -1,28 +1,28 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for transcription commands.
 
 #### This default permission set includes the following:
 
-- `allow-list-microphone-devices`
-- `allow-get-current-microphone-device`
-- `allow-start-capture`
-- `allow-stop-capture`
-- `allow-get-mic-muted`
-- `allow-set-mic-muted`
-- `allow-get-capture-state`
-- `allow-is-supported-languages-live`
-- `allow-suggest-providers-for-languages-live`
-- `allow-list-documented-language-codes-live`
-- `allow-render-transcript-segments`
-- `allow-start-transcription`
-- `allow-stop-transcription`
-- `allow-run-denoise`
-- `allow-parse-subtitle`
 - `allow-export-to-vtt`
+- `allow-get-capture-state`
+- `allow-get-current-microphone-device`
+- `allow-get-mic-muted`
 - `allow-is-supported-languages-batch`
-- `allow-suggest-providers-for-languages-batch`
+- `allow-is-supported-languages-live`
 - `allow-list-documented-language-codes-batch`
+- `allow-list-documented-language-codes-live`
+- `allow-list-microphone-devices`
+- `allow-parse-subtitle`
+- `allow-render-transcript-segments`
+- `allow-run-denoise`
+- `allow-set-mic-muted`
+- `allow-start-capture`
+- `allow-start-transcription`
+- `allow-stop-capture`
+- `allow-stop-transcription`
+- `allow-suggest-providers-for-languages-batch`
+- `allow-suggest-providers-for-languages-live`
 
 ## Permission Table
 

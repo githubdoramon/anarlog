@@ -1,7 +1,9 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for importer commands."
 permissions = [
-    "allow-list-available-sources",
-    "allow-run-import",
-    "allow-run-import-dry",
+  "allow-list-available-sources",
+  "allow-run-import",
+  "allow-run-import-dry",
 ]

@@ -1,13 +1,13 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for store2 commands.
 
 #### This default permission set includes the following:
 
-- `allow-save`
 - `allow-get-bool`
 - `allow-get-number`
 - `allow-get-str`
+- `allow-save`
 - `allow-set-bool`
 - `allow-set-number`
 - `allow-set-str`

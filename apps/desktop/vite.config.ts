@@ -1,6 +1,7 @@
-/// <reference types="vitest" />
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
+/// <reference types="vitest" />
+import { fileURLToPath } from "node:url";
 import { defineConfig, type UserConfig } from "vite";
 
 import { relayShim } from "@hypr/plugin-relay/vite";
@@ -8,6 +9,7 @@ import { relayShim } from "@hypr/plugin-relay/vite";
 import { changelog } from "./plugins/changelog";
 
 const host = process.env.TAURI_DEV_HOST;
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
@@ -51,6 +53,7 @@ export default defineConfig(() => ({
 // https://v2.tauri.app/start/frontend/vite/#update-vite-configuration
 const tauri: UserConfig = {
   clearScreen: false,
+  envDir: repoRoot,
   server: {
     port: 1422,
     strictPort: true,

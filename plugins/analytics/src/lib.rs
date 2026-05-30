@@ -1,17 +1,11 @@
-use tauri::Manager;
-
 mod commands;
 mod error;
 mod ext;
-mod store;
 
 pub use error::{Error, Result};
 pub use ext::*;
-use store::*;
 
 pub use hypr_analytics::*;
-
-pub type ManagedState = hypr_analytics::AnalyticsClient;
 
 const PLUGIN_NAME: &str = "analytics";
 
@@ -33,33 +27,6 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
     tauri::plugin::Builder::new(PLUGIN_NAME)
         .invoke_handler(specta_builder.invoke_handler())
-        .setup(|app, _api| {
-            let posthog_key = {
-                #[cfg(not(debug_assertions))]
-                {
-                    let v = env!("POSTHOG_API_KEY");
-                    assert!(v.starts_with("phc_"));
-                    Some(v)
-                }
-
-                #[cfg(debug_assertions)]
-                {
-                    option_env!("POSTHOG_API_KEY")
-                }
-            };
-
-            let client = {
-                let mut builder = hypr_analytics::AnalyticsClientBuilder::default();
-                if let Some(key) = posthog_key {
-                    builder = builder.with_posthog(key);
-                }
-
-                builder.build()
-            };
-
-            assert!(app.manage(client));
-            Ok(())
-        })
         .build()
 }
 

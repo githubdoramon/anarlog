@@ -44,6 +44,18 @@ pub(super) fn build_whisper_prompt(options: &TranscribeOptions) -> String {
     tokens.iter().map(|t| t.to_string()).collect()
 }
 
+pub(super) fn is_whisper_control_token(token: &str) -> bool {
+    let token = token.trim();
+
+    if token.starts_with("<|") && token.ends_with("|>") {
+        return true;
+    }
+
+    token.strip_prefix("</").is_some_and(|rest| {
+        !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use hypr_language::Language;
@@ -82,5 +94,14 @@ mod tests {
             ..Default::default()
         };
         insta::assert_snapshot!(build_whisper_prompt(&opts), @"<|startofprev|>안녕하세요<|startoftranscript|><|ko|><|transcribe|><|notimestamps|>");
+    }
+
+    #[test]
+    fn detects_control_tokens() {
+        assert!(is_whisper_control_token("<|notimestamps|>"));
+        assert!(is_whisper_control_token("</1"));
+        assert!(is_whisper_control_token("</12.5"));
+        assert!(!is_whisper_control_token("hello"));
+        assert!(!is_whisper_control_token("</abc"));
     }
 }

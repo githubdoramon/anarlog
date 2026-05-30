@@ -343,10 +343,10 @@
           "markdownDescription": "Denies the reset_permission command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-open-permission`\n- `allow-check-permission`\n- `allow-request-permission`\n- `allow-reset-permission`",
+          "description": "Default permissions for permissions commands.\n#### This default permission set includes:\n\n- `allow-check-permission`\n- `allow-open-permission`\n- `allow-request-permission`\n- `allow-reset-permission`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-open-permission`\n- `allow-check-permission`\n- `allow-request-permission`\n- `allow-reset-permission`"
+          "markdownDescription": "Default permissions for permissions commands.\n#### This default permission set includes:\n\n- `allow-check-permission`\n- `allow-open-permission`\n- `allow-request-permission`\n- `allow-reset-permission`"
         }
       ]
     }

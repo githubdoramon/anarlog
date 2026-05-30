@@ -319,10 +319,10 @@
           "markdownDescription": "Denies the show_notification command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-show-notification`\n- `allow-clear-notifications`",
+          "description": "Default permissions for notification commands.\n#### This default permission set includes:\n\n- `allow-clear-notifications`\n- `allow-show-notification`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-show-notification`\n- `allow-clear-notifications`"
+          "markdownDescription": "Default permissions for notification commands.\n#### This default permission set includes:\n\n- `allow-clear-notifications`\n- `allow-show-notification`"
         }
       ]
     }

@@ -1,6 +1,5 @@
 mod convert;
 mod error;
-mod fetch;
 pub mod runtime;
 
 pub use error::Error;
@@ -33,21 +32,17 @@ pub struct ProviderConnectionIds {
 
 pub fn available_providers() -> Vec<CalendarProviderType> {
     #[cfg(target_os = "macos")]
-    let providers = vec![
-        CalendarProviderType::Apple,
-        CalendarProviderType::Google,
-        CalendarProviderType::Outlook,
-    ];
+    let providers = vec![CalendarProviderType::Apple, CalendarProviderType::Google];
 
     #[cfg(not(target_os = "macos"))]
-    let providers = vec![CalendarProviderType::Google, CalendarProviderType::Outlook];
+    let providers = vec![CalendarProviderType::Google];
 
     providers
 }
 
 pub async fn list_connection_ids(
-    api_base_url: &str,
-    access_token: Option<&str>,
+    _api_base_url: &str,
+    _access_token: Option<&str>,
     apple_authorized: bool,
 ) -> Result<Vec<ProviderConnectionIds>, Error> {
     use std::collections::HashMap;
@@ -66,29 +61,7 @@ pub async fn list_connection_ids(
     #[cfg(not(target_os = "macos"))]
     let _ = apple_authorized;
 
-    if let Some(token) = access_token.filter(|t| !t.is_empty()) {
-        match fetch::list_all_connection_ids(api_base_url, token).await {
-            Ok(all) => {
-                for provider in [CalendarProviderType::Google, CalendarProviderType::Outlook] {
-                    // empty vec = provider is available but has no connections (vs absent = unavailable)
-                    map.entry(provider).or_default();
-                }
-                for (integration_id, connection_ids) in all {
-                    let provider = match integration_id.as_str() {
-                        "google-calendar" => CalendarProviderType::Google,
-                        "outlook" => CalendarProviderType::Outlook,
-                        _ => continue,
-                    };
-                    map.insert(provider, connection_ids);
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "failed to fetch remote connection ids: {e}; continuing with local providers only"
-                );
-            }
-        }
-    }
+    map.entry(CalendarProviderType::Google).or_default();
 
     Ok(map
         .into_iter()
@@ -112,34 +85,32 @@ pub async fn is_provider_enabled(
 }
 
 pub async fn list_calendars(
-    api_base_url: &str,
-    access_token: &str,
+    _api_base_url: &str,
+    _access_token: &str,
     provider: CalendarProviderType,
-    connection_id: &str,
+    _connection_id: &str,
 ) -> Result<Vec<CalendarListItem>, Error> {
     match provider {
         CalendarProviderType::Apple => {
             let calendars = list_apple_calendars()?;
             Ok(convert::convert_apple_calendars(calendars))
         }
-        CalendarProviderType::Google => {
-            let calendars =
-                fetch::list_google_calendars(api_base_url, access_token, connection_id).await?;
-            Ok(convert::convert_google_calendars(calendars))
-        }
-        CalendarProviderType::Outlook => {
-            let calendars =
-                fetch::list_outlook_calendars(api_base_url, access_token, connection_id).await?;
-            Ok(convert::convert_outlook_calendars(calendars))
-        }
+        CalendarProviderType::Google => Err(Error::UnsupportedOperation {
+            operation: "list_calendars",
+            provider,
+        }),
+        CalendarProviderType::Outlook => Err(Error::UnsupportedOperation {
+            operation: "list_calendars",
+            provider,
+        }),
     }
 }
 
 pub async fn list_events(
-    api_base_url: &str,
-    access_token: &str,
+    _api_base_url: &str,
+    _access_token: &str,
     provider: CalendarProviderType,
-    connection_id: &str,
+    _connection_id: &str,
     filter: EventFilter,
 ) -> Result<Vec<CalendarEvent>, Error> {
     match provider {
@@ -147,20 +118,14 @@ pub async fn list_events(
             let events = list_apple_events(filter)?;
             Ok(convert::convert_apple_events(events))
         }
-        CalendarProviderType::Google => {
-            let calendar_id = filter.calendar_tracking_id.clone();
-            let events =
-                fetch::list_google_events(api_base_url, access_token, connection_id, filter)
-                    .await?;
-            Ok(convert::convert_google_events(events, &calendar_id))
-        }
-        CalendarProviderType::Outlook => {
-            let calendar_id = filter.calendar_tracking_id.clone();
-            let events =
-                fetch::list_outlook_events(api_base_url, access_token, connection_id, filter)
-                    .await?;
-            Ok(convert::convert_outlook_events(events, &calendar_id))
-        }
+        CalendarProviderType::Google => Err(Error::UnsupportedOperation {
+            operation: "list_events",
+            provider,
+        }),
+        CalendarProviderType::Outlook => Err(Error::UnsupportedOperation {
+            operation: "list_events",
+            provider,
+        }),
     }
 }
 

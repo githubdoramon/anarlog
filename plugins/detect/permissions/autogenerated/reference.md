@@ -1,17 +1,17 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for detect commands.
 
 #### This default permission set includes the following:
 
+- `allow-get-current-locale-identifier`
+- `allow-get-preferred-languages`
+- `allow-list-default-ignored-bundle-ids`
 - `allow-list-installed-applications`
 - `allow-list-mic-using-applications`
-- `allow-set-respect-do-not-disturb`
 - `allow-set-ignored-bundle-ids`
-- `allow-list-default-ignored-bundle-ids`
-- `allow-get-preferred-languages`
-- `allow-get-current-locale-identifier`
 - `allow-set-mic-active-threshold`
+- `allow-set-respect-do-not-disturb`
 
 ## Permission Table
 

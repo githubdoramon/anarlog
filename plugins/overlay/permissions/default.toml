@@ -1,3 +1,8 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-set-fake-window-bounds", "allow-remove-fake-window"]
+description = "Default permissions for overlay commands."
+permissions = [
+  "allow-remove-fake-window",
+  "allow-set-fake-window-bounds",
+]

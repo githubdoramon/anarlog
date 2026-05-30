@@ -367,10 +367,10 @@
           "markdownDescription": "Denies the set_item command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-decode-claims`\n- `allow-get-item`\n- `allow-set-item`\n- `allow-remove-item`\n- `allow-clear`\n- `allow-get-account-info`",
+          "description": "Default permissions for auth commands.\n#### This default permission set includes:\n\n- `allow-clear`\n- `allow-decode-claims`\n- `allow-get-item`\n- `allow-remove-item`\n- `allow-set-item`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-decode-claims`\n- `allow-get-item`\n- `allow-set-item`\n- `allow-remove-item`\n- `allow-clear`\n- `allow-get-account-info`"
+          "markdownDescription": "Default permissions for auth commands.\n#### This default permission set includes:\n\n- `allow-clear`\n- `allow-decode-claims`\n- `allow-get-item`\n- `allow-remove-item`\n- `allow-set-item`"
         }
       ]
     }

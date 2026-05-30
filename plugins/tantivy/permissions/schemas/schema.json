@@ -367,10 +367,10 @@
           "markdownDescription": "Denies the update_documents command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-search`\n- `allow-reindex`\n- `allow-add-document`\n- `allow-update-document`\n- `allow-update-documents`\n- `allow-remove-document`",
+          "description": "Default permissions for tantivy commands.\n#### This default permission set includes:\n\n- `allow-add-document`\n- `allow-reindex`\n- `allow-remove-document`\n- `allow-search`\n- `allow-update-document`\n- `allow-update-documents`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-search`\n- `allow-reindex`\n- `allow-add-document`\n- `allow-update-document`\n- `allow-update-documents`\n- `allow-remove-document`"
+          "markdownDescription": "Default permissions for tantivy commands.\n#### This default permission set includes:\n\n- `allow-add-document`\n- `allow-reindex`\n- `allow-remove-document`\n- `allow-search`\n- `allow-update-document`\n- `allow-update-documents`"
         }
       ]
     }

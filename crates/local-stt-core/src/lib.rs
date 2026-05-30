@@ -13,6 +13,8 @@ pub static SUPPORTED_MODELS: &[LocalModel] = &[
     LocalModel::Cactus(CactusSttModel::WhisperSmallInt4Apple),
     LocalModel::Cactus(CactusSttModel::WhisperSmallInt8),
     LocalModel::Cactus(CactusSttModel::WhisperSmallInt8Apple),
+    LocalModel::Cactus(CactusSttModel::WhisperMediumInt8),
+    LocalModel::Cactus(CactusSttModel::WhisperMediumInt8Apple),
     LocalModel::Cactus(CactusSttModel::ParakeetTdt0_6bV3Int4),
     LocalModel::Cactus(CactusSttModel::ParakeetTdt0_6bV3Int4Apple),
     LocalModel::Cactus(CactusSttModel::ParakeetTdt0_6bV3Int8),
@@ -101,5 +103,13 @@ mod tests {
             assert_eq!(info.size_bytes, Some(model.size_bytes()));
             assert!(matches!(info.model_type, SttModelType::Soniqo));
         }
+    }
+
+    #[test]
+    fn supported_models_include_downloadable_whisper_medium_models() {
+        assert!(SUPPORTED_MODELS.contains(&LocalModel::Cactus(CactusSttModel::WhisperMediumInt8)));
+        assert!(
+            SUPPORTED_MODELS.contains(&LocalModel::Cactus(CactusSttModel::WhisperMediumInt8Apple))
+        );
     }
 }

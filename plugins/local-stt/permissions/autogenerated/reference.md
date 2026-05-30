@@ -1,22 +1,22 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for local-stt commands.
 
 #### This default permission set includes the following:
 
-- `allow-models-dir`
-- `allow-is-model-downloaded`
-- `allow-is-model-downloading`
-- `allow-download-model`
+- `allow-cactus-models-dir`
 - `allow-cancel-download`
 - `allow-delete-model`
-- `allow-start-server`
-- `allow-stop-server`
+- `allow-download-model`
 - `allow-get-server-for-model`
 - `allow-get-servers`
-- `allow-list-supported-models`
+- `allow-is-model-downloaded`
+- `allow-is-model-downloading`
 - `allow-list-supported-languages`
-- `allow-cactus-models-dir`
+- `allow-list-supported-models`
+- `allow-models-dir`
+- `allow-start-server`
+- `allow-stop-server`
 
 ## Permission Table
 

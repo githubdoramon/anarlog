@@ -3,8 +3,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { TauriMCPTransport } from "./tauri-mcp-transport";
 
-import { env } from "~/env";
-
 const TIMEOUT_MS = 5_000;
 
 export interface MCPClientConfig {
@@ -39,7 +37,7 @@ export function useMCPClient(
 
     const init = async () => {
       try {
-        const mcpUrl = new URL(config.endpoint, env.VITE_API_URL).toString();
+        const mcpUrl = new URL(config.endpoint, "http://127.0.0.1").toString();
 
         const headers: Record<string, string> = {};
         if (accessToken) {

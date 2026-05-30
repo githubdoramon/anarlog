@@ -1,15 +1,14 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for auth commands.
 
 #### This default permission set includes the following:
 
+- `allow-clear`
 - `allow-decode-claims`
 - `allow-get-item`
-- `allow-set-item`
 - `allow-remove-item`
-- `allow-clear`
-- `allow-get-account-info`
+- `allow-set-item`
 
 ## Permission Table
 

@@ -415,10 +415,10 @@
           "markdownDescription": "Denies the server_url command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-models-dir`\n- `allow-is-model-downloading`\n- `allow-is-model-downloaded`\n- `allow-download-model`\n- `allow-cancel-download`\n- `allow-delete-model`\n- `allow-list-downloaded-model`\n- `allow-list-supported-model`\n- `allow-list-custom-models`\n- `allow-server-url`",
+          "description": "Default permissions for local-llm commands.\n#### This default permission set includes:\n\n- `allow-cancel-download`\n- `allow-delete-model`\n- `allow-download-model`\n- `allow-is-model-downloaded`\n- `allow-is-model-downloading`\n- `allow-list-custom-models`\n- `allow-list-downloaded-model`\n- `allow-list-supported-model`\n- `allow-models-dir`\n- `allow-server-url`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-models-dir`\n- `allow-is-model-downloading`\n- `allow-is-model-downloaded`\n- `allow-download-model`\n- `allow-cancel-download`\n- `allow-delete-model`\n- `allow-list-downloaded-model`\n- `allow-list-supported-model`\n- `allow-list-custom-models`\n- `allow-server-url`"
+          "markdownDescription": "Default permissions for local-llm commands.\n#### This default permission set includes:\n\n- `allow-cancel-download`\n- `allow-delete-model`\n- `allow-download-model`\n- `allow-is-model-downloaded`\n- `allow-is-model-downloading`\n- `allow-list-custom-models`\n- `allow-list-downloaded-model`\n- `allow-list-supported-model`\n- `allow-models-dir`\n- `allow-server-url`"
         }
       ]
     }

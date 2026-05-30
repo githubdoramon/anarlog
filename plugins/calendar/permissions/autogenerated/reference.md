@@ -1,16 +1,16 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for calendar commands.
 
 #### This default permission set includes the following:
 
 - `allow-available-providers`
+- `allow-create-event`
 - `allow-is-provider-enabled`
-- `allow-list-connection-ids`
 - `allow-list-calendars`
+- `allow-list-connection-ids`
 - `allow-list-events`
 - `allow-open-calendar`
-- `allow-create-event`
 - `allow-parse-meeting-link`
 
 ## Permission Table

@@ -20,7 +20,5 @@ tauri-specta = { workspace = true, features = ["derive", "typescript"] }
 serde = { workspace = true }
 specta = { workspace = true }
 
-ractor = { workspace = true }
-
-reqwest = { workspace = true }
+ractor = { workspace = true, features = ["async-trait"] }
 tracing = { workspace = true }

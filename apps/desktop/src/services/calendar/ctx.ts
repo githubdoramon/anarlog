@@ -8,6 +8,10 @@ import type {
 } from "@hypr/plugin-calendar";
 
 import {
+  GOOGLE_LOCAL_CONNECTION_ID,
+  hasGoogleCalendarConnection,
+} from "~/calendar/google-local";
+import {
   findCalendarByTrackingId,
   getCalendarTrackingKey,
 } from "~/calendar/utils";
@@ -87,8 +91,23 @@ export async function getProviderConnections(): Promise<
   ProviderConnectionIds[]
 > {
   const result = await calendarCommands.listConnectionIds();
-  if (result.status === "error") return [];
-  return result.data;
+  const connections = result.status === "error" ? [] : [...result.data];
+
+  if (await hasGoogleCalendarConnection()) {
+    const google = connections.find((item) => item.provider === "google");
+    if (google) {
+      google.connection_ids = Array.from(
+        new Set([...google.connection_ids, GOOGLE_LOCAL_CONNECTION_ID]),
+      );
+    } else {
+      connections.push({
+        provider: "google",
+        connection_ids: [GOOGLE_LOCAL_CONNECTION_ID],
+      });
+    }
+  }
+
+  return connections;
 }
 
 export async function syncCalendars(

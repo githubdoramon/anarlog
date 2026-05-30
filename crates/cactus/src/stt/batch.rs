@@ -8,7 +8,7 @@ use crate::model::Model;
 
 use crate::model::ModelKind;
 
-use super::whisper::build_whisper_prompt;
+use super::whisper::{build_whisper_prompt, is_whisper_control_token};
 use super::{TranscribeOptions, TranscriptionResult};
 
 type TokenCallback = unsafe extern "C" fn(*const std::ffi::c_char, u32, *mut std::ffi::c_void);
@@ -37,7 +37,7 @@ unsafe extern "C" fn token_trampoline<F: FnMut(&str) -> bool>(
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let chunk = unsafe { CStr::from_ptr(token) }.to_string_lossy();
-        if chunk.starts_with("<|") && chunk.ends_with("|>") {
+        if is_whisper_control_token(&chunk) {
             return;
         }
         let on_token = unsafe { &mut *state.on_token.get() };

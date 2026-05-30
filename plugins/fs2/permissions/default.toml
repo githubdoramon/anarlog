@@ -1,3 +1,8 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the fs2 plugin"
-permissions = ["allow-read-text-file", "allow-remove", "allow-write-text-file"]
+description = "Default permissions for fs2 commands."
+permissions = [
+  "allow-read-text-file",
+  "allow-remove",
+]

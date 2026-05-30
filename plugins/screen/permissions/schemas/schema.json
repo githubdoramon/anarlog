@@ -319,10 +319,10 @@
           "markdownDescription": "Denies the capture_target_window_context command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin",
+          "description": "Default permissions for screen commands.\n#### This default permission set includes:\n\n- `allow-capture-frontmost-window-context`\n- `allow-capture-target-window-context`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin"
+          "markdownDescription": "Default permissions for screen commands.\n#### This default permission set includes:\n\n- `allow-capture-frontmost-window-context`\n- `allow-capture-target-window-context`"
         }
       ]
     }

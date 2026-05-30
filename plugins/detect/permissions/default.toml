@@ -1,12 +1,14 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for detect commands."
 permissions = [
-    "allow-list-installed-applications",
-    "allow-list-mic-using-applications",
-    "allow-set-respect-do-not-disturb",
-    "allow-set-ignored-bundle-ids",
-    "allow-list-default-ignored-bundle-ids",
-    "allow-get-preferred-languages",
-    "allow-get-current-locale-identifier",
-    "allow-set-mic-active-threshold",
+  "allow-get-current-locale-identifier",
+  "allow-get-preferred-languages",
+  "allow-list-default-ignored-bundle-ids",
+  "allow-list-installed-applications",
+  "allow-list-mic-using-applications",
+  "allow-set-ignored-bundle-ids",
+  "allow-set-mic-active-threshold",
+  "allow-set-respect-do-not-disturb",
 ]

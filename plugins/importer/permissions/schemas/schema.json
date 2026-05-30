@@ -331,10 +331,10 @@
           "markdownDescription": "Denies the run_import_dry command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-list-available-sources`\n- `allow-run-import`\n- `allow-run-import-dry`",
+          "description": "Default permissions for importer commands.\n#### This default permission set includes:\n\n- `allow-list-available-sources`\n- `allow-run-import`\n- `allow-run-import-dry`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-list-available-sources`\n- `allow-run-import`\n- `allow-run-import-dry`"
+          "markdownDescription": "Default permissions for importer commands.\n#### This default permission set includes:\n\n- `allow-list-available-sources`\n- `allow-run-import`\n- `allow-run-import-dry`"
         }
       ]
     }

@@ -1,3 +1,7 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-list-foundation-models"]
+description = "Default permissions for bedrock commands."
+permissions = [
+  "allow-list-foundation-models",
+]

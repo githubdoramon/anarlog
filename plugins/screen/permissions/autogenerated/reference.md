@@ -1,6 +1,11 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for screen commands.
+
+#### This default permission set includes the following:
+
+- `allow-capture-frontmost-window-context`
+- `allow-capture-target-window-context`
 
 ## Permission Table
 

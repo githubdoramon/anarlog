@@ -355,10 +355,10 @@
           "markdownDescription": "Denies the set_recording_indicator command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-set-dock-icon`\n- `allow-reset-dock-icon`\n- `allow-get-icon`\n- `allow-set-recording-indicator`",
+          "description": "Default permissions for icon commands.\n#### This default permission set includes:\n\n- `allow-get-icon`\n- `allow-reset-dock-icon`\n- `allow-set-dock-icon`\n- `allow-set-notification-badge`\n- `allow-set-recording-indicator`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-set-dock-icon`\n- `allow-reset-dock-icon`\n- `allow-get-icon`\n- `allow-set-recording-indicator`"
+          "markdownDescription": "Default permissions for icon commands.\n#### This default permission set includes:\n\n- `allow-get-icon`\n- `allow-reset-dock-icon`\n- `allow-set-dock-icon`\n- `allow-set-notification-badge`\n- `allow-set-recording-indicator`"
         }
       ]
     }

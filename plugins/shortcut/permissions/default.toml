@@ -1,5 +1,7 @@
+"$schema" = "schemas/schema.json"
+
 [default]
-description = "Default permissions for the plugin"
+description = "Default permissions for shortcut commands."
 permissions = [
   "allow-register-hotkey",
   "allow-unregister-hotkey",

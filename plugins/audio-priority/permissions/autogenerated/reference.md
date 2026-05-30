@@ -1,17 +1,17 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for audio-priority commands.
 
 #### This default permission set includes the following:
 
-- `allow-list-input-devices`
-- `allow-list-output-devices`
-- `allow-set-default-input-device`
-- `allow-set-default-output-device`
 - `allow-get-input-priorities`
 - `allow-get-output-priorities`
+- `allow-list-input-devices`
+- `allow-list-output-devices`
 - `allow-save-input-priorities`
 - `allow-save-output-priorities`
+- `allow-set-default-input-device`
+- `allow-set-default-output-device`
 
 ## Permission Table
 
