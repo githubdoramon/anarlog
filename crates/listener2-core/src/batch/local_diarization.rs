@@ -7,7 +7,9 @@ use super::BatchRunOutput;
 
 const MIN_DIARIZATION_TURN_SECONDS: f64 = 0.8;
 const MAX_AUTO_SPEAKERS: usize = 4;
-const SPEAKER_SIMILARITY_THRESHOLD: f32 = 0.72;
+const SPEAKER_SIMILARITY_THRESHOLD: f32 = 0.80;
+const DEBUG_ENV: &str = "LOCAL_DIARIZATION_DEBUG";
+const THRESHOLD_ENV: &str = "LOCAL_DIARIZATION_SIMILARITY_THRESHOLD";
 
 pub(super) fn diarize_local_batch_output(
     mut output: BatchRunOutput,
@@ -33,7 +35,7 @@ pub(super) fn diarize_local_batch_output(
 
         for alternative in &mut channel.alternatives {
             let words = std::mem::take(&mut alternative.words);
-            alternative.words = diarize_words_for_channel(words, samples, params);
+            alternative.words = diarize_words_for_channel(words, samples, params, channel_idx);
         }
     }
 
@@ -51,10 +53,13 @@ fn diarize_words_for_channel(
     mut words: Vec<batch::Word>,
     samples: &[f32],
     params: &ListenParams,
+    channel_idx: usize,
 ) -> Vec<batch::Word> {
     if words.len() < 2 || samples.is_empty() || words.iter().any(|word| word.speaker.is_some()) {
         return words;
     }
+
+    debug_word_timeline(channel_idx, samples, &words);
 
     let turns = word_turns(&words);
     if turns.len() < 2 {
@@ -67,14 +72,19 @@ fn diarize_words_for_channel(
         return words;
     }
 
-    let assignments =
-        match compute_turn_speakers(&turns, samples, target_speakers, force_speaker_count) {
-            Ok(assignments) => assignments,
-            Err(error) => {
-                tracing::warn!(error = %error, "local_diarization_failed");
-                return words;
-            }
-        };
+    let assignments = match compute_turn_speakers(
+        &turns,
+        samples,
+        target_speakers,
+        force_speaker_count,
+        channel_idx,
+    ) {
+        Ok(assignments) => assignments,
+        Err(error) => {
+            tracing::warn!(error = %error, "local_diarization_failed");
+            return words;
+        }
+    };
 
     if assignments.iter().all(|speaker| *speaker == assignments[0]) {
         return words;
@@ -146,13 +156,15 @@ fn compute_turn_speakers(
     samples: &[f32],
     target_speakers: usize,
     force_speaker_count: bool,
+    channel_idx: usize,
 ) -> Result<Vec<usize>, hypr_pyannote_local::Error> {
     let mut extractor = EmbeddingExtractor::new();
     let mut embeddings = Vec::with_capacity(turns.len());
 
-    for turn in turns {
+    for (turn_idx, turn) in turns.iter().enumerate() {
         let start = seconds_to_sample(turn.start, samples.len());
         let end = seconds_to_sample(turn.end, samples.len());
+        debug_turn_window(channel_idx, turn_idx, turn, start, end, samples.len());
         if start >= end {
             continue;
         }
@@ -163,11 +175,86 @@ fn compute_turn_speakers(
         return Ok(vec![0; turns.len()]);
     }
 
-    Ok(cluster_embeddings(
+    let assignments = cluster_embeddings(
         &embeddings,
         target_speakers,
         force_speaker_count,
-    ))
+        channel_idx,
+    );
+    debug_assignments(channel_idx, turns, &assignments);
+
+    Ok(assignments)
+}
+
+fn debug_enabled() -> bool {
+    std::env::var(DEBUG_ENV)
+        .is_ok_and(|value| !value.is_empty() && value != "0" && value != "false")
+}
+
+fn debug_word_timeline(channel_idx: usize, samples: &[f32], words: &[batch::Word]) {
+    if !debug_enabled() {
+        return;
+    }
+
+    let audio_duration = samples.len() as f64 / TARGET_SAMPLE_RATE as f64;
+    tracing::info!(
+        hyprnote.audio.channel = channel_idx,
+        hyprnote.audio.duration_seconds = audio_duration,
+        hyprnote.audio.samples = samples.len(),
+        hyprnote.stt.words = words.len(),
+        hyprnote.stt.first_word = %words.first().map(|word| word.word.as_str()).unwrap_or(""),
+        hyprnote.stt.first_start = words.first().map(|word| word.start),
+        hyprnote.stt.first_end = words.first().map(|word| word.end),
+        hyprnote.stt.last_word = %words.last().map(|word| word.word.as_str()).unwrap_or(""),
+        hyprnote.stt.last_start = words.last().map(|word| word.start),
+        hyprnote.stt.last_end = words.last().map(|word| word.end),
+        "local_diarization_word_timeline"
+    );
+}
+
+fn debug_turn_window(
+    channel_idx: usize,
+    turn_idx: usize,
+    turn: &WordTurn,
+    sample_start: usize,
+    sample_end: usize,
+    sample_count: usize,
+) {
+    if !debug_enabled() {
+        return;
+    }
+
+    tracing::info!(
+        hyprnote.audio.channel = channel_idx,
+        hyprnote.diarization.turn = turn_idx,
+        hyprnote.diarization.word_start = turn.word_range.start,
+        hyprnote.diarization.word_end = turn.word_range.end,
+        hyprnote.diarization.start_seconds = turn.start,
+        hyprnote.diarization.end_seconds = turn.end,
+        hyprnote.diarization.sample_start = sample_start,
+        hyprnote.diarization.sample_end = sample_end,
+        hyprnote.audio.samples = sample_count,
+        "local_diarization_turn_window"
+    );
+}
+
+fn debug_assignments(channel_idx: usize, turns: &[WordTurn], assignments: &[usize]) {
+    if !debug_enabled() {
+        return;
+    }
+
+    for (turn_idx, (turn, speaker)) in turns.iter().zip(assignments).enumerate() {
+        tracing::info!(
+            hyprnote.audio.channel = channel_idx,
+            hyprnote.diarization.turn = turn_idx,
+            hyprnote.diarization.word_start = turn.word_range.start,
+            hyprnote.diarization.word_end = turn.word_range.end,
+            hyprnote.diarization.start_seconds = turn.start,
+            hyprnote.diarization.end_seconds = turn.end,
+            hyprnote.diarization.speaker = speaker,
+            "local_diarization_turn_assignment"
+        );
+    }
 }
 
 fn seconds_to_sample(seconds: f64, sample_count: usize) -> usize {
@@ -178,22 +265,34 @@ fn cluster_embeddings(
     embeddings: &[Vec<f32>],
     target_speakers: usize,
     force_speaker_count: bool,
+    channel_idx: usize,
 ) -> Vec<usize> {
     if embeddings.is_empty() {
         return Vec::new();
     }
 
+    let threshold = speaker_similarity_threshold();
     let mut centroids = vec![normalize(&embeddings[0])];
-    for embedding in embeddings.iter().skip(1) {
+    for (idx, embedding) in embeddings.iter().enumerate().skip(1) {
         let normalized = normalize(embedding);
         let best_similarity = centroids
             .iter()
             .map(|centroid| cosine_similarity(&normalized, centroid))
             .fold(f32::NEG_INFINITY, f32::max);
+        let creates_speaker = centroids.len() < target_speakers
+            && (force_speaker_count || best_similarity < threshold);
+        debug_centroid_decision(
+            channel_idx,
+            idx,
+            centroids.len(),
+            target_speakers,
+            threshold,
+            best_similarity,
+            creates_speaker,
+            force_speaker_count,
+        );
 
-        if centroids.len() < target_speakers
-            && (force_speaker_count || best_similarity < SPEAKER_SIMILARITY_THRESHOLD)
-        {
+        if creates_speaker {
             centroids.push(normalized);
         }
     }
@@ -219,6 +318,42 @@ fn cluster_embeddings(
     }
 
     assignments
+}
+
+fn speaker_similarity_threshold() -> f32 {
+    std::env::var(THRESHOLD_ENV)
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|value| (0.0..=1.0).contains(value))
+        .unwrap_or(SPEAKER_SIMILARITY_THRESHOLD)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn debug_centroid_decision(
+    channel_idx: usize,
+    turn_idx: usize,
+    centroid_count: usize,
+    target_speakers: usize,
+    threshold: f32,
+    best_similarity: f32,
+    creates_speaker: bool,
+    force_speaker_count: bool,
+) {
+    if !debug_enabled() {
+        return;
+    }
+
+    tracing::info!(
+        hyprnote.audio.channel = channel_idx,
+        hyprnote.diarization.turn = turn_idx,
+        hyprnote.diarization.centroids = centroid_count,
+        hyprnote.diarization.target_speakers = target_speakers,
+        hyprnote.diarization.threshold = threshold,
+        hyprnote.diarization.best_similarity = best_similarity,
+        hyprnote.diarization.creates_speaker = creates_speaker,
+        hyprnote.diarization.force_speaker_count = force_speaker_count,
+        "local_diarization_centroid_decision"
+    );
 }
 
 fn nearest_centroid(embedding: &[f32], centroids: &[Vec<f32>]) -> usize {
@@ -339,6 +474,7 @@ mod tests {
             ],
             2,
             false,
+            0,
         );
 
         assert_eq!(assignments[0], assignments[1]);
