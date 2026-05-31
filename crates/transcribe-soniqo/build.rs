@@ -1,7 +1,7 @@
 #[cfg(target_os = "macos")]
 use std::{
     collections::BTreeSet,
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -104,12 +104,48 @@ fn mlx_metallib_candidates(profile_dir: &Path, profile: &str) -> Vec<PathBuf> {
         let repo_target_profile = PathBuf::from(manifest_dir)
             .parent()
             .and_then(Path::parent)
-            .map(|repo_root| repo_root.join("target").join(profile));
+            .map(|repo_root| {
+                candidates.extend(repo_mlx_metallib_candidates(repo_root, profile));
+                repo_root.join("target").join(profile)
+            });
 
         if let Some(repo_target_profile) = repo_target_profile {
             candidates.push(repo_target_profile.join("mlx.metallib"));
             candidates.push(repo_target_profile.join("deps/mlx.metallib"));
         }
+    }
+
+    candidates
+}
+
+#[cfg(target_os = "macos")]
+fn repo_mlx_metallib_candidates(repo_root: &Path, profile: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let worktrees_dir = repo_root.join(".worktrees");
+    let Ok(entries) = fs::read_dir(worktrees_dir) else {
+        return candidates;
+    };
+
+    for entry in entries.flatten() {
+        let root = entry.path();
+        candidates.push(root.join("target").join(profile).join("mlx.metallib"));
+        candidates.push(
+            root.join("target")
+                .join(profile)
+                .join("deps")
+                .join("mlx.metallib"),
+        );
+        candidates.push(
+            root.join("apps/desktop/src-tauri/target")
+                .join(profile)
+                .join("mlx.metallib"),
+        );
+        candidates.push(
+            root.join("apps/desktop/src-tauri/target")
+                .join(profile)
+                .join("deps")
+                .join("mlx.metallib"),
+        );
     }
 
     candidates
