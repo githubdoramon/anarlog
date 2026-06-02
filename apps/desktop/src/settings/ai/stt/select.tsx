@@ -44,6 +44,7 @@ import {
   isLiveTranscriptionSupported,
   isRealtimeLocalModel,
 } from "~/stt/capabilities";
+import { sortSoniqoModelsForRecommendation } from "~/stt/local-models";
 
 export function SelectProviderAndModel() {
   const { current_stt_provider, current_stt_model, spoken_languages } =
@@ -354,7 +355,9 @@ function useConfiguredMapping(): Record<
 
   const localModels = supportedModels.data ?? [];
   const cactusModels = localModels.filter((m) => m.model_type === "cactus");
-  const soniqoModels = localModels.filter((m) => m.model_type === "soniqo");
+  const soniqoModels = sortSoniqoModelsForRecommendation(
+    localModels.filter((m) => m.model_type === "soniqo"),
+  );
 
   const cactusDownloaded = useQueries({
     queries: [...cactusModels.map((m) => sttModelQueries.isDownloaded(m.key))],

@@ -19,6 +19,10 @@ import { getCurrentWebviewWindowLabel } from "@hypr/plugin-windows";
 import { registerSaveHandler } from "./save";
 
 import { useSettingsPersister } from "~/store/tinybase/persister/settings";
+import {
+  isRealtimeLocalSttModel,
+  RECOMMENDED_LOCAL_BATCH_STT_MODEL,
+} from "~/stt/local-models";
 
 export const STORE_ID = "settings";
 
@@ -113,7 +117,7 @@ export const SETTINGS_MAPPING = {
     current_stt_model: {
       type: "string",
       path: ["ai", "current_stt_model"],
-      default: "cactus-whisper-small-int4" as string,
+      default: RECOMMENDED_LOCAL_BATCH_STT_MODEL as string,
     },
     cactus_cloud_handoff: {
       type: "boolean",
@@ -296,6 +300,17 @@ type SettingsListeners = {
   ) => void;
 };
 
+function syncSelectedLocalSttServer(store: Store) {
+  const provider = store.getValue("current_stt_provider") as string | undefined;
+  const model = store.getValue("current_stt_model") as string | undefined;
+
+  if (provider === "hyprnote" && isRealtimeLocalSttModel(model)) {
+    localSttCommands.startServer(model as LocalModel).catch(console.error);
+  } else {
+    localSttCommands.stopServer(null).catch(console.error);
+  }
+}
+
 const SETTINGS_LISTENERS: SettingsListeners = {
   respect_dnd: (_store, newValue) => {
     detectCommands.setRespectDoNotDisturb(newValue).catch(console.error);
@@ -315,28 +330,8 @@ const SETTINGS_LISTENERS: SettingsListeners = {
   mic_active_threshold: (_store, newValue) => {
     detectCommands.setMicActiveThreshold(newValue).catch(console.error);
   },
-  current_stt_provider: (store) => {
-    const provider = store.getValue("current_stt_provider") as
-      | string
-      | undefined;
-    const model = store.getValue("current_stt_model") as string | undefined;
-
-    if (provider === "hyprnote" && model && model !== "cloud") {
-      localSttCommands.startServer(model as LocalModel).catch(console.error);
-    }
-  },
-  current_stt_model: (store) => {
-    const provider = store.getValue("current_stt_provider") as
-      | string
-      | undefined;
-    const model = store.getValue("current_stt_model") as string | undefined;
-
-    if (provider === "hyprnote" && model && model !== "cloud") {
-      localSttCommands.startServer(model as LocalModel).catch(console.error);
-    } else {
-      localSttCommands.stopServer(null).catch(console.error);
-    }
-  },
+  current_stt_provider: (store) => syncSelectedLocalSttServer(store),
+  current_stt_model: (store) => syncSelectedLocalSttServer(store),
 };
 
 function registerSettingsListeners(store: Store): () => void {

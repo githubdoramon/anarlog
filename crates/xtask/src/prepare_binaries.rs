@@ -25,11 +25,20 @@ pub(crate) fn prepare_binaries() -> Result<()> {
         "{cargo} build --release --target {triple} -p chrome-native-host"
     )
     .run()?;
-    cmd!(
-        sh,
-        "{cargo} build --release --target {triple} -p transcribe-soniqo --bin char-sidecar-soniqo-aligner"
-    )
-    .run()?;
+
+    let prepare_soniqo = triple == "aarch64-apple-darwin";
+    if prepare_soniqo {
+        cmd!(
+            sh,
+            "{cargo} build --release --target {triple} -p transcribe-soniqo --bin char-sidecar-soniqo-aligner"
+        )
+        .run()?;
+        cmd!(
+            sh,
+            "{cargo} build --release --target {triple} -p transcribe-soniqo --bin char-sidecar-soniqo-transcriber"
+        )
+        .run()?;
+    }
 
     fs::create_dir_all(&binaries_dir).context("create binaries/")?;
 
@@ -42,15 +51,44 @@ pub(crate) fn prepare_binaries() -> Result<()> {
     fs::copy(&src, &dst).with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
 
     println!("prepare-binaries: binaries/char-chrome-native-host-{triple}{ext}");
-    let src = src_tauri
-        .join("target")
-        .join(&triple)
-        .join("release")
-        .join(format!("char-sidecar-soniqo-aligner{ext}"));
-    let dst = binaries_dir.join(format!("char-sidecar-soniqo-aligner-{triple}{ext}"));
-    fs::copy(&src, &dst).with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+    if prepare_soniqo {
+        let src = src_tauri
+            .join("target")
+            .join(&triple)
+            .join("release")
+            .join(format!("char-sidecar-soniqo-aligner{ext}"));
+        let dst = binaries_dir.join(format!("char-sidecar-soniqo-aligner-{triple}{ext}"));
+        fs::copy(&src, &dst)
+            .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
 
-    println!("prepare-binaries: binaries/char-sidecar-soniqo-aligner-{triple}{ext}");
+        println!("prepare-binaries: binaries/char-sidecar-soniqo-aligner-{triple}{ext}");
+
+        let src = src_tauri
+            .join("target")
+            .join(&triple)
+            .join("release")
+            .join(format!("char-sidecar-soniqo-transcriber{ext}"));
+        let dst = binaries_dir.join(format!("char-sidecar-soniqo-transcriber-{triple}{ext}"));
+        fs::copy(&src, &dst)
+            .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+
+        println!("prepare-binaries: binaries/char-sidecar-soniqo-transcriber-{triple}{ext}");
+
+        let resources_dir = src_tauri.join("resources");
+        fs::create_dir_all(&resources_dir).context("create resources/")?;
+
+        let src = src_tauri
+            .join("target")
+            .join(&triple)
+            .join("release")
+            .join("mlx.metallib");
+        let dst = resources_dir.join("mlx.metallib");
+        fs::copy(&src, &dst)
+            .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+
+        println!("prepare-binaries: resources/mlx.metallib");
+    }
+
     Ok(())
 }
 

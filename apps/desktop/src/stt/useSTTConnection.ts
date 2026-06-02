@@ -12,6 +12,7 @@ import { useBillingAccess } from "~/auth/billing";
 import { providerRowId } from "~/settings/ai/shared";
 import { type ProviderId } from "~/settings/ai/stt/shared";
 import * as settings from "~/store/tinybase/store/settings";
+import { isRealtimeLocalSttModel } from "~/stt/local-models";
 
 export const useSTTConnection = () => {
   const auth = useAuth();
@@ -44,6 +45,21 @@ export const useSTTConnection = () => {
     queryFn: async () => {
       if (!isLocalModel || !current_stt_model) {
         return null;
+      }
+
+      if (
+        current_stt_model.startsWith("soniqo-") &&
+        !isRealtimeLocalSttModel(current_stt_model)
+      ) {
+        return {
+          status: "ready" as const,
+          connection: {
+            provider: current_stt_provider!,
+            model: current_stt_model,
+            baseUrl: "soniqo://local",
+            apiKey: "",
+          },
+        };
       }
 
       const downloaded = await localSttCommands.isModelDownloaded(

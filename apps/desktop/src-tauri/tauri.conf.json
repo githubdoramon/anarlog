@@ -4,9 +4,9 @@
   "mainBinaryName": "anarlog-dev",
   "identifier": "com.hyprnote.dev",
   "build": {
-    "beforeDevCommand": "pnpm -F desktop dev",
+    "beforeDevCommand": "cargo xtask prepare-binaries && pnpm -F desktop dev",
     "devUrl": "http://localhost:1422",
-    "beforeBuildCommand": "pnpm -F desktop build",
+    "beforeBuildCommand": "cargo xtask prepare-binaries && pnpm -F desktop build",
     "beforeBundleCommand": "node ./src-tauri/scripts/before-bundle.mjs",
     "frontendDist": "../dist"
   },
@@ -59,6 +59,7 @@
         }
       },
       "files": {
+        "MacOS/mlx.metallib": "resources/mlx.metallib",
         "Resources/AppIcon.incs": "resources/stable/AppIcon.icns",
         "Resources/Assets.car": "resources/stable/Assets.car"
       }

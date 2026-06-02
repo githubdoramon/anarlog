@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hypr_transcription_core::listener2 as core;
+use tauri_plugin_shell::process::{Command, CommandEvent};
 use tauri_plugin_sidecar2::Sidecar2PluginExt;
 use tauri_specta::Event;
 use tokio::task::JoinHandle;
@@ -13,10 +14,39 @@ use crate::{
 
 const BATCH_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const SONIQO_ALIGNMENT_TIMEOUT: Duration = Duration::from_secs(90);
+const SONIQO_TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+const SONIQO_TRANSCRIPTION_HEARTBEAT: Duration = Duration::from_secs(5);
+
+struct SidecarOutput {
+    code: Option<i32>,
+    signal: Option<i32>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+impl SidecarOutput {
+    fn success(&self) -> bool {
+        self.code == Some(0) && self.signal.is_none()
+    }
+
+    fn status_summary(&self) -> String {
+        format!("code={:?}, signal={:?}", self.code, self.signal)
+    }
+}
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SoniqoAlignmentOutput {
+    #[serde(default)]
+    words: Vec<hypr_transcribe_soniqo::AlignedWord>,
+    error: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SoniqoTranscriptionOutput {
+    text: String,
+    duration_seconds: f64,
     #[serde(default)]
     words: Vec<hypr_transcribe_soniqo::AlignedWord>,
     error: Option<String>,
@@ -245,39 +275,126 @@ impl core::BatchRuntime for TauriBatchRuntime {
         let app = self.app.clone();
         Box::pin(async move {
             let audio_path = request.audio_path.to_string_lossy().into_owned();
-            let mut cmd = app
-                .sidecar2()
-                .sidecar("char-sidecar-soniqo-aligner")
-                .map_err(|error| error.to_string())?
-                .args(["--audio", &audio_path, "--text", &request.text]);
+            let mut cmd = match app.sidecar2().sidecar("char-sidecar-soniqo-aligner") {
+                Ok(cmd) => cmd.args(["--audio", &audio_path, "--text", &request.text]),
+                Err(error) => {
+                    tracing::error!(
+                        hyprnote.file.path = %audio_path,
+                        error = %error,
+                        "soniqo_alignment_sidecar_create_failed"
+                    );
+                    return Err(error.to_string());
+                }
+            };
 
             if let Some(language) = request.language.as_deref() {
                 cmd = cmd.args(["--language", language]);
             }
 
-            let output = tokio::time::timeout(SONIQO_ALIGNMENT_TIMEOUT, cmd.output())
+            let output = run_sidecar_with_timeout(cmd, SONIQO_ALIGNMENT_TIMEOUT, None)
                 .await
-                .map_err(|_| "Soniqo aligner sidecar timed out".to_string())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| format!("Soniqo aligner sidecar failed: {error}"))?;
 
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            if !output.status.success() {
-                return Err(format!(
-                    "Soniqo aligner sidecar failed: status={:?}, stderr={}",
-                    output.status,
-                    stderr.trim()
-                ));
+            if !output.success() {
+                let error = sidecar_error_message(&output, &stdout, &stderr);
+                tracing::error!(
+                    hyprnote.file.path = %audio_path,
+                    hyprnote.sidecar.status = %output.status_summary(),
+                    error = %error,
+                    "soniqo_alignment_sidecar_failed"
+                );
+                return Err(format!("Soniqo aligner sidecar failed: {error}"));
             }
 
-            let parsed: SoniqoAlignmentOutput =
-                serde_json::from_str(stdout.trim()).map_err(|error| error.to_string())?;
+            let parsed: SoniqoAlignmentOutput = parse_sidecar_json(&stdout)?;
             if let Some(error) = parsed.error {
                 return Err(error);
             }
 
             Ok(parsed.words)
+        })
+    }
+
+    fn transcribe_soniqo(
+        &self,
+        request: core::SoniqoTranscriptionRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<hypr_transcribe_soniqo::FileTranscript, String>>
+                + Send,
+        >,
+    > {
+        let app = self.app.clone();
+        let last_activity_tx = self.control.last_activity_tx.clone();
+        Box::pin(async move {
+            let audio_path = request.audio_path.to_string_lossy().into_owned();
+            let started_at = Instant::now();
+            tracing::info!(
+                hyprnote.soniqo.model = request.model.as_str(),
+                hyprnote.file.path = %audio_path,
+                "soniqo_transcription_sidecar_start"
+            );
+            let mut cmd = match app.sidecar2().sidecar("char-sidecar-soniqo-transcriber") {
+                Ok(cmd) => cmd.args(["--model", request.model.as_str(), "--audio", &audio_path]),
+                Err(error) => {
+                    tracing::error!(
+                        hyprnote.soniqo.model = request.model.as_str(),
+                        hyprnote.file.path = %audio_path,
+                        error = %error,
+                        "soniqo_transcription_sidecar_create_failed"
+                    );
+                    return Err(error.to_string());
+                }
+            };
+
+            if let Some(language) = request.language.as_deref() {
+                cmd = cmd.args(["--language", language]);
+            }
+
+            let output = run_sidecar_with_timeout(
+                cmd,
+                SONIQO_TRANSCRIPTION_TIMEOUT,
+                Some((SONIQO_TRANSCRIPTION_HEARTBEAT, last_activity_tx)),
+            )
+            .await?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::info!(
+                hyprnote.soniqo.model = request.model.as_str(),
+                hyprnote.file.path = %audio_path,
+                hyprnote.sidecar.status = %output.status_summary(),
+                hyprnote.sidecar.elapsed_ms = started_at.elapsed().as_millis(),
+                hyprnote.sidecar.stdout_bytes = output.stdout.len(),
+                hyprnote.sidecar.stderr_bytes = output.stderr.len(),
+                "soniqo_transcription_sidecar_finished"
+            );
+
+            if !output.success() {
+                let error = sidecar_error_message(&output, &stdout, &stderr);
+                tracing::error!(
+                    hyprnote.soniqo.model = request.model.as_str(),
+                    hyprnote.file.path = %audio_path,
+                    hyprnote.sidecar.status = %output.status_summary(),
+                    error = %error,
+                    "soniqo_transcription_sidecar_failed"
+                );
+                return Err(format!("Soniqo transcription sidecar failed: {error}"));
+            }
+
+            let parsed: SoniqoTranscriptionOutput = parse_sidecar_json(&stdout)?;
+            if let Some(error) = parsed.error {
+                return Err(error);
+            }
+
+            Ok(hypr_transcribe_soniqo::FileTranscript {
+                text: parsed.text,
+                duration_seconds: parsed.duration_seconds,
+                words: parsed.words,
+            })
         })
     }
 }
@@ -427,6 +544,129 @@ fn spawn_idle_timeout_monitor(
     })
 }
 
+async fn run_sidecar_with_timeout(
+    cmd: Command,
+    timeout: Duration,
+    heartbeat: Option<(Duration, tokio::sync::watch::Sender<Instant>)>,
+) -> Result<SidecarOutput, String> {
+    let (mut rx, child) = cmd.spawn().map_err(|error| {
+        tracing::error!(error = %error, "sidecar_spawn_failed");
+        error.to_string()
+    })?;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut heartbeat = heartbeat.map(|(duration, tx)| {
+        let mut interval = tokio::time::interval(duration);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        (interval, tx)
+    });
+    let timeout = tokio::time::sleep(timeout);
+    tokio::pin!(timeout);
+
+    loop {
+        tokio::select! {
+            _ = &mut timeout => {
+                let _ = child.kill();
+                return Err("timed out".to_string());
+            }
+            _ = async {
+                match heartbeat.as_mut() {
+                    Some((interval, tx)) => {
+                        interval.tick().await;
+                        let _ = tx.send(Instant::now());
+                    }
+                    None => std::future::pending::<()>().await,
+                }
+            } => {}
+            event = rx.recv() => {
+                match event {
+                    Some(CommandEvent::Stdout(bytes)) => {
+                        stdout.extend(bytes);
+                        stdout.push(b'\n');
+                    }
+                    Some(CommandEvent::Stderr(bytes)) => {
+                        stderr.extend(bytes);
+                        stderr.push(b'\n');
+                    }
+                    Some(CommandEvent::Terminated(payload)) => {
+                        return Ok(SidecarOutput {
+                            code: payload.code,
+                            signal: payload.signal,
+                            stdout,
+                            stderr,
+                        });
+                    }
+                    Some(CommandEvent::Error(error)) => {
+                        let _ = child.kill();
+                        return Err(error);
+                    }
+                    None => {
+                        return Err("event stream closed before process terminated".to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn sidecar_error_message(output: &SidecarOutput, stdout: &str, stderr: &str) -> String {
+    let stdout = stdout.trim();
+    let stderr = stderr.trim();
+
+    let json_error = sidecar_json_values(stdout).find_map(|value| {
+        value
+            .get("error")
+            .and_then(|error| error.as_str())
+            .map(str::trim)
+            .filter(|error| !error.is_empty())
+            .map(str::to_string)
+    });
+
+    let detail = json_error
+        .or_else(|| (!stderr.is_empty()).then(|| truncate_sidecar_output(stderr)))
+        .or_else(|| (!stdout.is_empty()).then(|| truncate_sidecar_output(stdout)))
+        .unwrap_or_else(|| "no output".to_string());
+
+    format!("status={}, output={detail}", output.status_summary())
+}
+
+fn parse_sidecar_json<T: serde::de::DeserializeOwned>(stdout: &str) -> Result<T, String> {
+    for value in sidecar_json_values(stdout) {
+        if let Ok(parsed) = serde_json::from_value(value) {
+            return Ok(parsed);
+        }
+    }
+
+    serde_json::from_str(stdout.trim()).map_err(|error| {
+        format!(
+            "failed to parse sidecar JSON: {error}; stdout={}",
+            truncate_sidecar_output(stdout.trim())
+        )
+    })
+}
+
+fn sidecar_json_values(stdout: &str) -> impl Iterator<Item = serde_json::Value> + '_ {
+    stdout.lines().filter_map(|line| {
+        let line = line.trim();
+        line.starts_with('{')
+            .then(|| serde_json::from_str(line).ok())
+            .flatten()
+    })
+}
+
+fn truncate_sidecar_output(value: &str) -> String {
+    const MAX_CHARS: usize = 1000;
+
+    let mut chars = value.chars();
+    let truncated: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,5 +729,19 @@ mod tests {
                 .expect("batch session registry poisoned")
                 .contains_key("session-1")
         );
+    }
+
+    #[test]
+    fn parse_sidecar_json_uses_json_line_before_logs() {
+        let stdout = r#"{"text":"ok","durationSeconds":1.0,"words":[],"error":null}
+Loaded tokenizer
+Loading: model.safetensors"#;
+
+        let parsed: SoniqoTranscriptionOutput = parse_sidecar_json(stdout).unwrap();
+
+        assert_eq!(parsed.text, "ok");
+        assert_eq!(parsed.duration_seconds, 1.0);
+        assert!(parsed.words.is_empty());
+        assert!(parsed.error.is_none());
     }
 }

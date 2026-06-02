@@ -9,7 +9,7 @@ use owhisper_client::{
 use tracing::Instrument;
 
 use super::{BatchParams, BatchRunMode, BatchRunOutput, format_user_friendly_error, session_span};
-use crate::{BatchRuntime, SoniqoAlignmentRequest};
+use crate::{BatchRuntime, SoniqoAlignmentRequest, SoniqoTranscriptionRequest};
 
 const SONIQO_BATCH_SAMPLE_RATE: u32 = 16_000;
 const SONIQO_BATCH_MAX_CHUNK_SECONDS: f64 = 25.0;
@@ -652,8 +652,13 @@ async fn transcribe_soniqo_prepared_channel(
     language: Option<String>,
 ) -> crate::Result<hypr_transcribe_soniqo::FileTranscript> {
     if prepared_channel.duration_seconds() <= SONIQO_BATCH_MAX_CHUNK_SECONDS {
-        let mut transcribed =
-            transcribe_soniqo_file(model, prepared_channel.path(), language.as_deref()).await?;
+        let mut transcribed = transcribe_soniqo_file(
+            &runtime,
+            model,
+            prepared_channel.path(),
+            language.as_deref(),
+        )
+        .await?;
         repair_soniqo_alignment(&mut transcribed, &prepared_channel.profile);
         align_soniqo_words(
             &runtime,
@@ -687,7 +692,7 @@ async fn transcribe_soniqo_prepared_channel(
     for chunk in chunks {
         let chunk_file = write_soniqo_channel_chunk_file(&prepared_channel, chunk)?;
         let mut transcribed =
-            transcribe_soniqo_file(model, chunk_file.path(), language.as_deref()).await?;
+            transcribe_soniqo_file(&runtime, model, chunk_file.path(), language.as_deref()).await?;
         let chunk_profile = SoniqoChannelProfile::from_file_range(&prepared_channel, chunk)?;
         repair_soniqo_alignment(&mut transcribed, &chunk_profile);
         align_soniqo_words(
@@ -731,26 +736,23 @@ async fn transcribe_soniqo_prepared_channel(
 }
 
 async fn transcribe_soniqo_file(
+    runtime: &Arc<dyn BatchRuntime>,
     model: hypr_transcribe_soniqo::SoniqoModel,
     path: &Path,
     language: Option<&str>,
 ) -> crate::Result<hypr_transcribe_soniqo::FileTranscript> {
-    let path = path.to_path_buf();
-    let language = language.map(ToOwned::to_owned);
-    tokio::task::spawn_blocking(move || {
-        hypr_transcribe_soniqo::transcribe_file(model, path, language.as_deref()).map_err(|e| {
-            crate::BatchFailure::DirectRequestFailed {
-                provider: "soniqo".to_string(),
-                message: format_user_friendly_error(&e.to_string()),
-            }
+    runtime
+        .transcribe_soniqo(SoniqoTranscriptionRequest {
+            model,
+            audio_path: path.to_path_buf(),
+            language: language.map(ToOwned::to_owned),
         })
-    })
-    .await
-    .map_err(|e| crate::BatchFailure::DirectRequestFailed {
-        provider: "soniqo".to_string(),
-        message: format!("Soniqo transcription task failed: {e}"),
-    })?
-    .map_err(Into::into)
+        .await
+        .map_err(|e| crate::BatchFailure::DirectRequestFailed {
+            provider: "soniqo".to_string(),
+            message: format_user_friendly_error(&e),
+        })
+        .map_err(Into::into)
 }
 
 async fn align_soniqo_words(

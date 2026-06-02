@@ -1,7 +1,9 @@
 {
   "bundle": {
     "externalBin": [
-      "binaries/check-permissions"
+      "binaries/check-permissions",
+      "binaries/char-sidecar-soniqo-aligner",
+      "binaries/char-sidecar-soniqo-transcriber"
     ]
   }
 }

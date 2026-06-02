@@ -38,6 +38,7 @@ import {
 } from "~/settings/ai/shared";
 import * as settings from "~/store/tinybase/store/settings";
 import { useListener } from "~/stt/contexts";
+import { sortSoniqoModelsForRecommendation } from "~/stt/local-models";
 import { localSttQueries, useLocalModelDownload } from "~/stt/useLocalSttModel";
 
 export function ConfigureProviders() {
@@ -116,7 +117,9 @@ function HyprProviderCard({
     (m) => m.model_type === "whispercpp",
   );
   const cactusModels = localModels.filter((m) => m.model_type === "cactus");
-  const soniqoModels = localModels.filter((m) => m.model_type === "soniqo");
+  const soniqoModels = sortSoniqoModelsForRecommendation(
+    localModels.filter((m) => m.model_type === "soniqo"),
+  );
 
   const hasLocalModels =
     soniqoModels.length > 0 ||
@@ -165,7 +168,7 @@ function HyprProviderCard({
 
               <StyledStreamdown>
                 {
-                  "Soniqo Parakeet Streaming supports **realtime transcription** on Apple Silicon.\n\nOther on-device models are **batch processed** after recording."
+                  "Soniqo Qwen3 1.7B is the recommended **batch transcription** model for English and Portuguese on Apple Silicon.\n\nSoniqo Parakeet Streaming remains available for **realtime transcription**."
                 }
               </StyledStreamdown>
 

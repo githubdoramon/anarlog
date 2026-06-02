@@ -12,6 +12,8 @@ import { transformWordEntries, type WordEntry } from "./utils";
 import { type RuntimeSpeakerHint, type WordLike } from "~/stt/segment";
 
 const SYNTHETIC_WORD_SECONDS = 0.4;
+export const EMPTY_BATCH_TRANSCRIPT_ERROR =
+  "No speech was detected in the recording.";
 
 export type BatchPhase = "importing" | "transcribing";
 export type BatchTerminalReason = "failed" | "timed_out" | "stopped";
@@ -41,7 +43,7 @@ export type BatchState = {
 export type BatchActions = {
   handleBatchStarted: (sessionId: string, phase?: BatchPhase) => void;
   handleBatchCompleted: (sessionId: string) => void;
-  handleBatchResponse: (sessionId: string, response: BatchResponse) => void;
+  handleBatchResponse: (sessionId: string, response: BatchResponse) => boolean;
   handleBatchResponseStreamed: (
     sessionId: string,
     event: BatchStreamEvent,
@@ -114,11 +116,8 @@ export const createBatchSlice = <T extends BatchState & BatchActions>(
 
     const [words, hints] = transformBatch(response);
     if (!words.length) {
-      get().handleBatchFailed(
-        sessionId,
-        "No speech was detected in the recording.",
-      );
-      return;
+      get().handleBatchFailed(sessionId, EMPTY_BATCH_TRANSCRIPT_ERROR);
+      return false;
     }
 
     persist?.(words, hints);
@@ -136,6 +135,8 @@ export const createBatchSlice = <T extends BatchState & BatchActions>(
         batchPreview: restPreview,
       };
     });
+
+    return true;
   },
 
   handleBatchResponseStreamed: (sessionId, event) => {

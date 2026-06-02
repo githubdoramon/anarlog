@@ -133,10 +133,23 @@ function TranscriptPanel({
 function useRegenerateTranscript(sessionId: string) {
   const runBatch = useRunBatch(sessionId);
   const handleBatchFailed = useListener((state) => state.handleBatchFailed);
+  const getSessionMode = useListener((state) => state.getSessionMode);
+  const isStartingRef = useRef(false);
 
   return useCallback(async () => {
+    if (
+      isStartingRef.current ||
+      getSessionMode(sessionId) === "running_batch"
+    ) {
+      return;
+    }
+
+    isStartingRef.current = true;
     const result = await fsSyncCommands.audioPath(sessionId);
-    if (result.status === "error") return;
+    if (result.status === "error") {
+      isStartingRef.current = false;
+      return;
+    }
 
     const audioPath = result.data;
 
@@ -149,8 +162,10 @@ function useRegenerateTranscript(sessionId: string) {
       }
       const msg = error instanceof Error ? error.message : String(error);
       handleBatchFailed(sessionId, msg);
+    } finally {
+      isStartingRef.current = false;
     }
-  }, [handleBatchFailed, runBatch, sessionId]);
+  }, [getSessionMode, handleBatchFailed, runBatch, sessionId]);
 }
 
 function BatchingTranscriptPanel({
