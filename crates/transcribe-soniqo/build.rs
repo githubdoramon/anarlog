@@ -101,17 +101,26 @@ fn mlx_metallib_candidates(profile_dir: &Path, profile: &str) -> Vec<PathBuf> {
     ];
 
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
-        let repo_target_profile = PathBuf::from(manifest_dir)
+        let repo_root = PathBuf::from(&manifest_dir)
             .parent()
             .and_then(Path::parent)
-            .map(|repo_root| {
-                candidates.extend(repo_mlx_metallib_candidates(repo_root, profile));
-                repo_root.join("target").join(profile)
-            });
+            .map(Path::to_path_buf);
 
-        if let Some(repo_target_profile) = repo_target_profile {
+        if let Some(repo_root) = repo_root {
+            candidates.extend(repo_mlx_metallib_candidates(&repo_root, profile));
+            if profile != "debug" {
+                candidates.extend(repo_mlx_metallib_candidates(&repo_root, "debug"));
+            }
+
+            let repo_target_profile = repo_root.join("target").join(profile);
             candidates.push(repo_target_profile.join("mlx.metallib"));
             candidates.push(repo_target_profile.join("deps/mlx.metallib"));
+
+            if profile != "debug" {
+                let repo_debug_profile = repo_root.join("target/debug");
+                candidates.push(repo_debug_profile.join("mlx.metallib"));
+                candidates.push(repo_debug_profile.join("deps/mlx.metallib"));
+            }
         }
     }
 

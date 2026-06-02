@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  AUDIO_RETENTION_MIN_DELETE_AGE_MS,
   normalizeAudioRetention,
   sessionAudioExpired,
 } from "./audio-retention";
@@ -15,8 +16,19 @@ describe("audio retention", () => {
     expect(normalizeAudioRetention("invalid", undefined)).toBeUndefined();
   });
 
-  test("expires immediately when retention is none", () => {
-    expect(sessionAudioExpired("not-a-date", "none")).toBe(true);
+  test("does not delete fresh audio even when retention is none", () => {
+    const now = Date.parse("2026-05-13T00:00:00.000Z");
+
+    expect(sessionAudioExpired("2026-05-12T23:30:00.000Z", "none", now)).toBe(
+      false,
+    );
+    expect(
+      sessionAudioExpired(
+        new Date(now - AUDIO_RETENTION_MIN_DELETE_AGE_MS - 1).toISOString(),
+        "none",
+        now,
+      ),
+    ).toBe(true);
   });
 
   test("expires after the selected retention window", () => {

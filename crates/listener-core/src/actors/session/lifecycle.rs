@@ -63,8 +63,21 @@ pub(crate) fn emit_session_ended(
 ) {
     let span = session_span(session_id);
     let _guard = span.enter();
-    let audio_path = resolve_final_audio_path(sessions_base, session_id)
-        .map(|path| path.to_string_lossy().into_owned());
+    let audio_path = resolve_final_audio_path(sessions_base, session_id).map(|path| {
+        tracing::info!(
+            audio_path = %path.display(),
+            audio_size = std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
+            "session_stopped_audio_resolved"
+        );
+        path.to_string_lossy().into_owned()
+    });
+
+    if audio_path.is_none() {
+        tracing::warn!(
+            sessions_base = %sessions_base.display(),
+            "session_stopped_audio_missing"
+        );
+    }
 
     runtime.emit_lifecycle(SessionLifecycleEvent::Inactive {
         session_id: session_id.to_string(),

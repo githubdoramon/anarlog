@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hypr_transcription_core::listener2 as core;
+use tauri_plugin_sidecar2::Sidecar2PluginExt;
 use tauri_specta::Event;
 use tokio::task::JoinHandle;
 
@@ -11,6 +12,15 @@ use crate::{
 };
 
 const BATCH_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const SONIQO_ALIGNMENT_TIMEOUT: Duration = Duration::from_secs(90);
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SoniqoAlignmentOutput {
+    #[serde(default)]
+    words: Vec<hypr_transcribe_soniqo::AlignedWord>,
+    error: Option<String>,
+}
 
 pub struct Listener2<'a, R: tauri::Runtime, M: tauri::Manager<R>> {
     manager: &'a M,
@@ -220,6 +230,55 @@ impl core::BatchRuntime for TauriBatchRuntime {
             return;
         }
         let _ = TranscriptionEvent::from(event).emit(&self.app);
+    }
+
+    fn align_soniqo(
+        &self,
+        request: core::SoniqoAlignmentRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<hypr_transcribe_soniqo::AlignedWord>, String>,
+                > + Send,
+        >,
+    > {
+        let app = self.app.clone();
+        Box::pin(async move {
+            let audio_path = request.audio_path.to_string_lossy().into_owned();
+            let mut cmd = app
+                .sidecar2()
+                .sidecar("char-sidecar-soniqo-aligner")
+                .map_err(|error| error.to_string())?
+                .args(["--audio", &audio_path, "--text", &request.text]);
+
+            if let Some(language) = request.language.as_deref() {
+                cmd = cmd.args(["--language", language]);
+            }
+
+            let output = tokio::time::timeout(SONIQO_ALIGNMENT_TIMEOUT, cmd.output())
+                .await
+                .map_err(|_| "Soniqo aligner sidecar timed out".to_string())?
+                .map_err(|error| error.to_string())?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if !output.status.success() {
+                return Err(format!(
+                    "Soniqo aligner sidecar failed: status={:?}, stderr={}",
+                    output.status,
+                    stderr.trim()
+                ));
+            }
+
+            let parsed: SoniqoAlignmentOutput =
+                serde_json::from_str(stdout.trim()).map_err(|error| error.to_string())?;
+            if let Some(error) = parsed.error {
+                return Err(error);
+            }
+
+            Ok(parsed.words)
+        })
     }
 }
 

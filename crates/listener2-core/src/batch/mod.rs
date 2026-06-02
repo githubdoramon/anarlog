@@ -186,7 +186,7 @@ async fn run_batch_inner(
         BatchProvider::WhisperLocal | BatchProvider::Cactus => {
             run_progressive_batch_session(runtime, params, listen_params).await
         }
-        BatchProvider::Soniqo => run_soniqo_batch(params, listen_params).await,
+        BatchProvider::Soniqo => run_soniqo_batch(runtime, params, listen_params).await,
         BatchProvider::OpenAI => {
             if OpenAIAdapter::supports_progressive_batch_model(listen_params.model.as_deref()) {
                 run_progressive_batch_session(runtime, params, listen_params).await
@@ -311,7 +311,24 @@ pub(super) fn format_user_friendly_error(error: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
+
+    #[derive(Default)]
+    struct DiagnosticRuntime {
+        events: Mutex<Vec<BatchEvent>>,
+    }
+
+    impl crate::BatchRuntime for DiagnosticRuntime {
+        fn emit(&self, event: BatchEvent) {
+            println!(
+                "ANARLOG_DIAG_EVENT {}",
+                serde_json::to_string_pretty(&event).unwrap()
+            );
+            self.events.lock().unwrap().push(event);
+        }
+    }
 
     fn listen_params(model: Option<&str>) -> owhisper_interface::ListenParams {
         owhisper_interface::ListenParams {
@@ -334,6 +351,44 @@ mod tests {
             num_speakers: None,
             min_speakers: None,
             max_speakers: None,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "set ANARLOG_DIAG_AUDIO to a local recording path"]
+    async fn diagnose_batch_recording_from_env() {
+        let audio = std::env::var("ANARLOG_DIAG_AUDIO")
+            .expect("ANARLOG_DIAG_AUDIO must point to a recording file");
+        let provider = std::env::var("ANARLOG_DIAG_PROVIDER").unwrap_or_else(|_| "soniqo".into());
+        let model =
+            std::env::var("ANARLOG_DIAG_MODEL").unwrap_or_else(|_| "soniqo-parakeet-batch".into());
+        let provider = provider.parse::<BatchProvider>().unwrap();
+
+        let runtime = Arc::new(DiagnosticRuntime::default());
+        let result = run_batch(
+            runtime,
+            BatchParams {
+                session_id: "diagnostic-session".to_string(),
+                provider,
+                file_path: audio,
+                model: Some(model),
+                base_url: String::new(),
+                api_key: String::new(),
+                languages: vec![hypr_language::ISO639::En.into()],
+                keywords: vec![],
+                num_speakers: None,
+                min_speakers: None,
+                max_speakers: None,
+            },
+        )
+        .await;
+
+        match result {
+            Ok(output) => println!(
+                "ANARLOG_DIAG_RESPONSE {}",
+                serde_json::to_string_pretty(&output.response).unwrap()
+            ),
+            Err(error) => println!("ANARLOG_DIAG_ERROR {error:#}"),
         }
     }
 

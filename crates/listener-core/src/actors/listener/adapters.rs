@@ -486,7 +486,8 @@ fn build_listen_params(args: &ListenerArgs) -> owhisper_interface::ListenParams 
     )]);
 
     if adapter_kind == AdapterKind::AssemblyAI
-        && let Some(expected_speakers) = assemblyai_expected_speakers(args)
+        && let Some(expected_speakers) = args.expected_remote_speaker_count
+        && expected_speakers > 0
     {
         custom_query.insert("speaker_labels".to_string(), "true".to_string());
         custom_query.insert("max_speakers".to_string(), expected_speakers.to_string());
@@ -500,21 +501,6 @@ fn build_listen_params(args: &ListenerArgs) -> owhisper_interface::ListenParams 
         custom_query: Some(custom_query),
         ..Default::default()
     }
-}
-
-fn assemblyai_expected_speakers(args: &ListenerArgs) -> Option<u32> {
-    let mut participants = args.participant_human_ids.clone();
-
-    if let Some(self_human_id) = &args.self_human_id
-        && !participants.iter().any(|id| id == self_human_id)
-    {
-        participants.push(self_human_id.clone());
-    }
-
-    participants.sort();
-    participants.dedup();
-
-    (participants.len() > 1).then_some(participants.len() as u32)
 }
 
 fn format_languages(languages: &[hypr_language::Language]) -> String {
@@ -718,23 +704,32 @@ mod tests {
             session_id: "session".to_string(),
             participant_human_ids: vec![],
             self_human_id: None,
+            expected_remote_speaker_count: None,
         }
     }
 
     #[test]
-    fn assemblyai_expected_speakers_counts_distinct_participants() {
+    fn build_listen_params_uses_expected_remote_speaker_count() {
         let mut args = listener_args("https://api.assemblyai.com", "u3-rt-pro");
-        args.participant_human_ids = vec!["remote".to_string(), "self".to_string()];
-        args.self_human_id = Some("self".to_string());
+        args.expected_remote_speaker_count = Some(1);
 
-        assert_eq!(assemblyai_expected_speakers(&args), Some(2));
+        let params = build_listen_params(&args);
+        let custom_query = params.custom_query.expect("custom query");
+
+        assert_eq!(
+            custom_query.get("speaker_labels").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            custom_query.get("max_speakers").map(String::as_str),
+            Some("1")
+        );
     }
 
     #[test]
     fn build_listen_params_adds_assemblyai_diarization_hints() {
         let mut args = listener_args("https://api.assemblyai.com", "u3-rt-pro");
-        args.participant_human_ids = vec!["remote".to_string()];
-        args.self_human_id = Some("self".to_string());
+        args.expected_remote_speaker_count = Some(2);
 
         let params = build_listen_params(&args);
         let custom_query = params.custom_query.expect("custom query");
@@ -752,8 +747,7 @@ mod tests {
     #[test]
     fn build_listen_params_does_not_add_assemblyai_hints_for_other_providers() {
         let mut args = listener_args("https://api.deepgram.com/v1", "nova-3");
-        args.participant_human_ids = vec!["remote".to_string()];
-        args.self_human_id = Some("self".to_string());
+        args.expected_remote_speaker_count = Some(1);
 
         let params = build_listen_params(&args);
         let custom_query = params.custom_query.expect("custom query");

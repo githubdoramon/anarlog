@@ -460,6 +460,7 @@ mod tests {
                 keywords: vec![],
                 participant_human_ids: vec![],
                 self_human_id: None,
+                expected_remote_speaker_count: None,
             },
             app_dir: std::env::temp_dir(),
             started_at_instant: Instant::now(),

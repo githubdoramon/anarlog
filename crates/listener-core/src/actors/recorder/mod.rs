@@ -54,9 +54,15 @@ impl Actor for RecorderActor {
     ) -> Result<Self::State, ActorProcessingErr> {
         let session_dir = find_session_dir(&args.app_dir, &args.session_id);
         std::fs::create_dir_all(&session_dir)?;
+        tracing::info!(
+            session_id = %args.session_id,
+            app_dir = %args.app_dir.display(),
+            session_dir = %session_dir.display(),
+            "recording_session_dir_resolved"
+        );
 
         Ok(RecState {
-            sink: RecorderSink::Disk(disk::create_disk_sink(&session_dir)?),
+            sink: RecorderSink::Disk(disk::create_disk_sink(&args.session_id, &session_dir)?),
         })
     }
 

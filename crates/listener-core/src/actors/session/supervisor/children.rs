@@ -120,6 +120,7 @@ pub(super) async fn spawn_listener(
             session_id: ctx.params.session_id.clone(),
             participant_human_ids: ctx.params.participant_human_ids.clone(),
             self_human_id: ctx.params.self_human_id.clone(),
+            expected_remote_speaker_count: ctx.params.expected_remote_speaker_count,
         },
         supervisor_cell,
     )

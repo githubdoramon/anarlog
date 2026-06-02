@@ -253,6 +253,11 @@ private struct FileTranscriptionPayload: Codable {
   var error: String?
 }
 
+private struct AlignmentPayload: Codable {
+  var words: [AlignedWordPayload]
+  var error: String?
+}
+
 private struct AlignedWordPayload: Codable {
   var word: String
   var start: Double
@@ -317,6 +322,10 @@ private func decodeFloatSamples(from data: Data) throws -> [Float] {
   }
 
   return samples
+}
+
+private func shouldUseSoniqoForcedAligner() -> Bool {
+  ProcessInfo.processInfo.environment["ANARLOG_SONIQO_FORCE_ALIGNER"] == "1"
 }
 
 private actor SoniqoBridge {
@@ -514,11 +523,14 @@ private actor SoniqoBridge {
         sampleRate: 16000,
         language: trimmedLanguage.isEmpty ? nil : trimmedLanguage
       )
-      let words = await alignedWords(
-        audio: audio,
-        text: text,
-        language: alignmentLanguageName(trimmedLanguage)
-      )
+      let words =
+        shouldUseSoniqoForcedAligner()
+        ? await alignedWords(
+          audio: audio,
+          text: text,
+          language: alignmentLanguageName(trimmedLanguage)
+        )
+        : []
 
       return encodeJSON(
         FileTranscriptionPayload(
@@ -537,6 +549,28 @@ private actor SoniqoBridge {
           error: error.localizedDescription
         )
       )
+    }
+  }
+
+  func alignAudioFileJSON(audioPath: String, text: String, language: String) async -> String {
+    do {
+      let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmedText.isEmpty else {
+        return encodeJSON(AlignmentPayload(words: [], error: nil))
+      }
+
+      let trimmedLanguage = language.trimmingCharacters(in: .whitespacesAndNewlines)
+      let url = URL(fileURLWithPath: audioPath)
+      let audio = try AudioFileLoader.load(url: url, targetSampleRate: 16000)
+      let words = await alignedWords(
+        audio: audio,
+        text: trimmedText,
+        language: alignmentLanguageName(trimmedLanguage)
+      )
+
+      return encodeJSON(AlignmentPayload(words: words, error: nil))
+    } catch {
+      return encodeJSON(AlignmentPayload(words: [], error: error.localizedDescription))
     }
   }
 
@@ -772,6 +806,22 @@ public func _soniqo_transcribe_audio_file(
       await SoniqoBridge.shared.transcribeAudioFileJSON(
         modelId: modelId.toString(),
         audioPath: audioPath.toString(),
+        language: language.toString()
+      )
+    })
+}
+
+@_cdecl("_soniqo_align_audio_file")
+public func _soniqo_align_audio_file(
+  audioPath: SRString,
+  text: SRString,
+  language: SRString
+) -> SRString {
+  SRString(
+    waitForValue {
+      await SoniqoBridge.shared.alignAudioFileJSON(
+        audioPath: audioPath.toString(),
+        text: text.toString(),
         language: language.toString()
       )
     })

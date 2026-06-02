@@ -62,10 +62,17 @@ impl<'a, R: tauri::Runtime, M: Manager<R>> Sidecar2<'a, R, M> {
 fn resolve_debug_paths(binary_name: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     let passthrough = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../apps/desktop/src-tauri/resources/passthrough-aarch64-apple-darwin");
-    let binary = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-        "../../apps/desktop/src-tauri/resources/{}-aarch64-apple-darwin",
-        binary_name
-    ));
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let binary = [
+        manifest_dir.join(format!(
+            "../../apps/desktop/src-tauri/resources/{}-aarch64-apple-darwin",
+            binary_name
+        )),
+        manifest_dir.join(format!("../../target/debug/char-sidecar-{}", binary_name)),
+        manifest_dir.join(format!("../../target/release/char-sidecar-{}", binary_name)),
+    ]
+    .into_iter()
+    .find(|path| path.exists())?;
 
     if passthrough.exists() && binary.exists() {
         Some((passthrough, binary))

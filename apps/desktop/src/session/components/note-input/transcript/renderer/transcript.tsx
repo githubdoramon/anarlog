@@ -12,6 +12,7 @@ import {
   segmentsShallowEqual,
   useStableSegments,
 } from "./segment-hooks";
+import { SpeakerControls } from "./speaker-controls";
 
 import * as main from "~/store/tinybase/store/main";
 import {
@@ -128,6 +129,7 @@ const SegmentsList = memo(
 
     return (
       <div>
+        <SpeakerControls transcriptId={transcriptId} />
         {segments.map((segment, index) => (
           <div
             key={createSegmentKey(segment, transcriptId, index)}

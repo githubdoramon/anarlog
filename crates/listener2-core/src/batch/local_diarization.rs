@@ -6,8 +6,9 @@ use owhisper_interface::{ListenParams, batch};
 use super::BatchRunOutput;
 
 const MIN_DIARIZATION_TURN_SECONDS: f64 = 0.8;
-const MAX_AUTO_SPEAKERS: usize = 4;
-const SPEAKER_SIMILARITY_THRESHOLD: f32 = 0.80;
+const MIN_AUTO_SPEAKER_SECONDS: f64 = 3.0;
+const MAX_AUTO_SPEAKERS: usize = 2;
+const SPEAKER_SIMILARITY_THRESHOLD: f32 = 0.70;
 const DEBUG_ENV: &str = "LOCAL_DIARIZATION_DEBUG";
 const THRESHOLD_ENV: &str = "LOCAL_DIARIZATION_SIMILARITY_THRESHOLD";
 
@@ -72,7 +73,7 @@ fn diarize_words_for_channel(
         return words;
     }
 
-    let assignments = match compute_turn_speakers(
+    let mut assignments = match compute_turn_speakers(
         &turns,
         samples,
         target_speakers,
@@ -85,6 +86,10 @@ fn diarize_words_for_channel(
             return words;
         }
     };
+
+    if !force_speaker_count {
+        assignments = merge_short_lived_speakers(&turns, assignments);
+    }
 
     if assignments.iter().all(|speaker| *speaker == assignments[0]) {
         return words;
@@ -320,6 +325,120 @@ fn cluster_embeddings(
     assignments
 }
 
+fn merge_short_lived_speakers(turns: &[WordTurn], assignments: Vec<usize>) -> Vec<usize> {
+    if turns.len() != assignments.len() || assignments.is_empty() {
+        return assignments;
+    }
+
+    let speaker_count = assignments.iter().copied().max().unwrap_or(0) + 1;
+    if speaker_count <= 1 {
+        return assignments;
+    }
+
+    let mut durations = vec![0.0; speaker_count];
+    let mut turn_counts = vec![0usize; speaker_count];
+    for (turn, speaker) in turns.iter().zip(&assignments) {
+        durations[*speaker] += (turn.end - turn.start).max(0.0);
+        turn_counts[*speaker] += 1;
+    }
+
+    let dominant_speaker = durations
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| {
+            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(speaker, _)| speaker)
+        .unwrap_or(0);
+
+    let mut merged = assignments.clone();
+    for speaker in 0..speaker_count {
+        let is_short_lived =
+            turn_counts[speaker] <= 1 || durations[speaker] < MIN_AUTO_SPEAKER_SECONDS;
+        if !is_short_lived {
+            continue;
+        }
+
+        let replacement = nearest_stable_neighbor(turns, &assignments, speaker, &durations)
+            .unwrap_or(if speaker == dominant_speaker {
+                nearest_other_speaker(&durations, speaker).unwrap_or(dominant_speaker)
+            } else {
+                dominant_speaker
+            });
+
+        for (idx, assigned) in assignments.iter().enumerate() {
+            if *assigned == speaker {
+                merged[idx] = replacement;
+            }
+        }
+    }
+
+    compact_speaker_indexes(merged)
+}
+
+fn nearest_stable_neighbor(
+    turns: &[WordTurn],
+    assignments: &[usize],
+    speaker: usize,
+    durations: &[f64],
+) -> Option<usize> {
+    let mut best: Option<(usize, f64)> = None;
+
+    for (idx, turn) in turns.iter().enumerate() {
+        if assignments[idx] != speaker {
+            continue;
+        }
+
+        for (other_idx, other_turn) in turns.iter().enumerate() {
+            let other_speaker = assignments[other_idx];
+            if other_speaker == speaker || durations[other_speaker] < MIN_AUTO_SPEAKER_SECONDS {
+                continue;
+            }
+
+            let distance = if other_turn.end <= turn.start {
+                turn.start - other_turn.end
+            } else if turn.end <= other_turn.start {
+                other_turn.start - turn.end
+            } else {
+                0.0
+            };
+
+            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                best = Some((other_speaker, distance));
+            }
+        }
+    }
+
+    best.map(|(speaker, _)| speaker)
+}
+
+fn nearest_other_speaker(durations: &[f64], speaker: usize) -> Option<usize> {
+    durations
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| *idx != speaker)
+        .max_by(|(_, left), (_, right)| {
+            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(idx, _)| idx)
+}
+
+fn compact_speaker_indexes(assignments: Vec<usize>) -> Vec<usize> {
+    let mut next = 0usize;
+    let mut remap = std::collections::HashMap::new();
+
+    assignments
+        .into_iter()
+        .map(|speaker| {
+            *remap.entry(speaker).or_insert_with(|| {
+                let current = next;
+                next += 1;
+                current
+            })
+        })
+        .collect()
+}
+
 fn speaker_similarity_threshold() -> f32 {
     std::env::var(THRESHOLD_ENV)
         .ok()
@@ -480,6 +599,61 @@ mod tests {
         assert_eq!(assignments[0], assignments[1]);
         assert_eq!(assignments[2], assignments[3]);
         assert_ne!(assignments[0], assignments[2]);
+    }
+
+    #[test]
+    fn merge_short_lived_speakers_rejoins_single_turn_split() {
+        let turns = vec![
+            WordTurn {
+                word_range: 0..1,
+                start: 0.0,
+                end: 5.0,
+            },
+            WordTurn {
+                word_range: 1..2,
+                start: 6.0,
+                end: 7.0,
+            },
+            WordTurn {
+                word_range: 2..3,
+                start: 8.0,
+                end: 13.0,
+            },
+        ];
+
+        let assignments = merge_short_lived_speakers(&turns, vec![0, 1, 0]);
+
+        assert_eq!(assignments, vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn merge_short_lived_speakers_keeps_stable_speakers() {
+        let turns = vec![
+            WordTurn {
+                word_range: 0..1,
+                start: 0.0,
+                end: 5.0,
+            },
+            WordTurn {
+                word_range: 1..2,
+                start: 6.0,
+                end: 10.0,
+            },
+            WordTurn {
+                word_range: 2..3,
+                start: 11.0,
+                end: 15.0,
+            },
+            WordTurn {
+                word_range: 3..4,
+                start: 16.0,
+                end: 20.0,
+            },
+        ];
+
+        let assignments = merge_short_lived_speakers(&turns, vec![0, 1, 0, 1]);
+
+        assert_eq!(assignments, vec![0, 1, 0, 1]);
     }
 
     #[test]

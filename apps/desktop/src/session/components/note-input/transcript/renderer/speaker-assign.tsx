@@ -25,7 +25,6 @@ export function SpeakerAssignPopover({
 }) {
   const [open, setOpen] = useState(false);
   const store = main.UI.useStore(main.STORE_ID);
-  const isSelf = segment.key.channel === "DirectMic";
 
   const sessionId = main.UI.useCell(
     "transcripts",
@@ -50,10 +49,6 @@ export function SpeakerAssignPopover({
     },
     [store, transcriptId, segment.key, segment.words],
   );
-
-  if (isSelf) {
-    return <span style={{ color }}>{label}</span>;
-  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -89,6 +84,10 @@ function ParticipantList({
   onSelect: (humanId: string) => void;
 }) {
   const queries = main.UI.useQueries(main.STORE_ID);
+  const participantMappingsTable = main.UI.useTable(
+    "mapping_session_participant",
+    main.STORE_ID,
+  );
 
   const mappingIds = main.UI.useSliceRowIds(
     main.INDEXES.sessionParticipantsBySession,
@@ -100,6 +99,10 @@ function ParticipantList({
     if (!queries) return [];
     return mappingIds
       .map((mappingId) => {
+        if (participantMappingsTable?.[mappingId]?.source === "excluded") {
+          return null;
+        }
+
         const result = queries.getResultRow(
           main.QUERIES.sessionParticipantsWithDetails,
           mappingId,
@@ -109,7 +112,7 @@ function ParticipantList({
         return { id: result.human_id as string, name };
       })
       .filter((p): p is { id: string; name: string } => p !== null);
-  }, [mappingIds, queries]);
+  }, [mappingIds, participantMappingsTable, queries]);
 
   if (participants.length === 0) {
     return (

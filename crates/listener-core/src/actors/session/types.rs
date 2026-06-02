@@ -28,6 +28,8 @@ pub struct SessionParams {
     pub participant_human_ids: Vec<String>,
     #[serde(default)]
     pub self_human_id: Option<String>,
+    #[serde(default)]
+    pub expected_remote_speaker_count: Option<u32>,
 }
 
 impl SessionParams {
@@ -92,6 +94,7 @@ mod tests {
             keywords: vec![],
             participant_human_ids: vec![],
             self_human_id: None,
+            expected_remote_speaker_count: None,
         }
     }
 

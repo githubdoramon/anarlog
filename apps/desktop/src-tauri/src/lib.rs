@@ -209,12 +209,11 @@ pub async fn main() {
         Some(false) => app.set_onboarding_needed(false).unwrap(),
         Some(true) => {
             use tauri_plugin_auth::AuthPluginExt;
-            use tauri_plugin_settings::SettingsPluginExt;
-            use tauri_plugin_store2::Store2PluginExt;
 
+            tracing::warn!(
+                "onboarding_requested_preserving_settings_and_store_to_avoid_vault_data_loss"
+            );
             let _ = app.clear_auth();
-            let _ = app.settings().reset();
-            let _ = app.store2().reset();
             let _ = app.set_onboarding_needed(true);
 
             let app_handle = app.handle().clone();

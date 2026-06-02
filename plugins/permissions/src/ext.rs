@@ -107,7 +107,7 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Permissions<'a, R, M> {
     fn should_check_with_sidecar(&self, permission: Permission) -> bool {
         !matches!(
             permission,
-            Permission::SystemAudio | Permission::ScreenRecording
+            Permission::Microphone | Permission::SystemAudio | Permission::ScreenRecording
         )
     }
 

@@ -12,6 +12,10 @@ import { id } from "~/shared/utils";
 import * as main from "~/store/tinybase/store/main";
 import type { BatchPersistCallback } from "~/store/zustand/listener/transcript";
 import { getTranscriptionLanguages } from "~/stt/capabilities";
+import {
+  getBatchSpeakerBounds,
+  getExpectedRemoteSpeakerCount,
+} from "~/stt/diarization";
 import type { SpeakerHintWithId, WordWithId } from "~/stt/types";
 import {
   parseTranscriptHints,
@@ -117,6 +121,16 @@ export const useRunBatch = (sessionId: string) => {
       const createdAt = new Date().toISOString();
       const memoMd = store.getCell("sessions", sessionId, "raw_md");
       let transcriptId: string | null = null;
+      const defaultSpeakerBounds = getBatchSpeakerBounds(
+        getExpectedRemoteSpeakerCount(store, sessionId),
+      );
+      const numSpeakers =
+        options?.numSpeakers ?? defaultSpeakerBounds?.numSpeakers;
+      const maxSpeakers =
+        options?.maxSpeakers ??
+        (typeof numSpeakers === "number"
+          ? undefined
+          : defaultSpeakerBounds?.maxSpeakers);
 
       const handlePersist: BatchPersistCallback | undefined =
         options?.handlePersist;
@@ -235,9 +249,9 @@ export const useRunBatch = (sessionId: string) => {
         languages:
           options?.languages ??
           getTranscriptionLanguages(aiLanguage, spokenLanguages),
-        num_speakers: options?.numSpeakers,
+        num_speakers: numSpeakers,
         min_speakers: options?.minSpeakers,
-        max_speakers: options?.maxSpeakers,
+        max_speakers: maxSpeakers,
       };
 
       await startTranscription(params, { handlePersist: persist });

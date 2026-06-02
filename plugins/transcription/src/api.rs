@@ -24,6 +24,8 @@ pub struct CaptureParams {
     pub participant_human_ids: Vec<String>,
     #[serde(default)]
     pub self_human_id: Option<String>,
+    #[serde(default)]
+    pub expected_remote_speaker_count: Option<u32>,
 }
 
 impl CaptureParams {
@@ -207,6 +209,7 @@ impl From<CaptureParams> for listener::actors::SessionParams {
             keywords: value.keywords,
             participant_human_ids: value.participant_human_ids,
             self_human_id: value.self_human_id,
+            expected_remote_speaker_count: value.expected_remote_speaker_count,
         }
     }
 }
@@ -334,6 +337,7 @@ mod tests {
             transcription_mode: None,
             participant_human_ids: vec![],
             self_human_id: None,
+            expected_remote_speaker_count: None,
         }
     }
 

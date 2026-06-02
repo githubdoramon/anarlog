@@ -327,6 +327,18 @@ pub fn transcribe_file(
     platform::transcribe_file(model, path.as_ref(), language.unwrap_or_default())
 }
 
+pub fn align_file(
+    path: impl AsRef<Path>,
+    text: impl AsRef<str>,
+    language: Option<&str>,
+) -> Result<Vec<AlignedWord>> {
+    if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        return Err(Error::UnsupportedPlatform);
+    }
+
+    platform::align_file(path.as_ref(), text.as_ref(), language.unwrap_or_default())
+}
+
 pub struct LiveTranscriptionSession {
     model: SoniqoModel,
     stopped: bool,
@@ -590,6 +602,11 @@ mod platform {
         audio_path: &SRString,
         language: &SRString
     ) -> SRString);
+    swift!(fn _soniqo_align_audio_file(
+        audio_path: &SRString,
+        text: &SRString,
+        language: &SRString
+    ) -> SRString);
     swift!(fn _soniqo_live_start(model_id: &SRString) -> SRString);
     swift!(fn _soniqo_live_append(source: &SRString, samples: &SRData) -> SRString);
     swift!(fn _soniqo_live_finalize(source: &SRString) -> SRString);
@@ -600,6 +617,13 @@ mod platform {
     struct FileTranscriptionPayload {
         text: String,
         duration_seconds: f64,
+        #[serde(default)]
+        words: Vec<AlignedWord>,
+        error: Option<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct AlignmentPayload {
         #[serde(default)]
         words: Vec<AlignedWord>,
         error: Option<String>,
@@ -684,6 +708,20 @@ mod platform {
             duration_seconds: result.duration_seconds,
             words: result.words,
         })
+    }
+
+    pub(super) fn align_file(path: &Path, text: &str, language: &str) -> Result<Vec<AlignedWord>> {
+        let audio_path = sr_string(&path.to_string_lossy());
+        let text = sr_string(text);
+        let language = sr_string(language);
+        let payload = unsafe { _soniqo_align_audio_file(&audio_path, &text, &language) };
+        let result: AlignmentPayload = serde_json::from_str(payload.as_str())?;
+
+        if let Some(error) = result.error {
+            return Err(Error::Bridge(error));
+        }
+
+        Ok(result.words)
     }
 
     pub(super) fn live_start(model: SoniqoModel) -> Result<()> {
@@ -777,6 +815,14 @@ mod platform {
         _path: &Path,
         _language: &str,
     ) -> Result<FileTranscript> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    pub(super) fn align_file(
+        _path: &Path,
+        _text: &str,
+        _language: &str,
+    ) -> Result<Vec<AlignedWord>> {
         Err(Error::UnsupportedPlatform)
     }
 

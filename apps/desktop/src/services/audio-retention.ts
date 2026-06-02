@@ -12,6 +12,7 @@ import { listenerStore } from "~/store/zustand/listener/instance";
 
 export const AUDIO_RETENTION_TASK_ID = "audio-retention-cleanup";
 export const AUDIO_RETENTION_INTERVAL = 60 * 1000;
+export const AUDIO_RETENTION_MIN_DELETE_AGE_MS = 60 * 60 * 1000;
 
 export {
   normalizeAudioRetention,
@@ -23,10 +24,6 @@ export function sessionAudioExpired(
   policy: AudioRetentionPolicy,
   nowMs = Date.now(),
 ) {
-  if (policy === "none") {
-    return true;
-  }
-
   if (typeof createdAt !== "string") {
     return false;
   }
@@ -34,6 +31,15 @@ export function sessionAudioExpired(
   const createdAtMs = Date.parse(createdAt);
   if (!Number.isFinite(createdAtMs)) {
     return false;
+  }
+
+  const ageMs = nowMs - createdAtMs;
+  if (ageMs < AUDIO_RETENTION_MIN_DELETE_AGE_MS) {
+    return false;
+  }
+
+  if (policy === "none") {
+    return true;
   }
 
   return nowMs >= createdAtMs + AUDIO_RETENTION_DURATION_MS[policy];
@@ -49,16 +55,32 @@ export async function cleanupExpiredAudio(
   );
   const deletes: Promise<void>[] = [];
 
+  console.info("[audio-retention] cleanup started", {
+    policy,
+    nowMs,
+  });
+
   store.forEachRow("sessions", (sessionId, _forEachCell) => {
     if (listenerStore.getState().getSessionMode(sessionId) !== "inactive") {
+      console.debug("[audio-retention] skipping active session", { sessionId });
       return;
     }
 
     const createdAt = store.getCell("sessions", sessionId, "created_at");
     if (!sessionAudioExpired(createdAt, policy, nowMs)) {
+      console.debug("[audio-retention] keeping audio", {
+        sessionId,
+        createdAt,
+        policy,
+      });
       return;
     }
 
+    console.info("[audio-retention] deleting expired audio", {
+      sessionId,
+      createdAt,
+      policy,
+    });
     deletes.push(
       fsSyncCommands
         .audioDelete(sessionId)
@@ -68,7 +90,11 @@ export async function cleanupExpiredAudio(
               sessionId,
               error: result.error,
             });
+            return;
           }
+          console.info("[audio-retention] deleted expired audio", {
+            sessionId,
+          });
         })
         .catch((error) => {
           console.error("[audio-retention] failed to delete audio", {

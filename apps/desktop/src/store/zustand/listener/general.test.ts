@@ -1,5 +1,7 @@
 import { create as mutate } from "mutative";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+import type { BatchResponse } from "@hypr/plugin-transcription";
 
 import { createListenerStore } from ".";
 import { getLiveCaptureUiMode } from "./general-shared";
@@ -178,6 +180,85 @@ describe("General Listener Slice", () => {
         errorCode: undefined,
       });
       expect(getSessionMode(sessionId)).toBe("inactive");
+    });
+
+    test("handleBatchResponse persists transcript-only provider responses", () => {
+      const sessionId = "session-transcript-only";
+      const persist = vi.fn();
+      const { handleBatchStarted, handleBatchResponse, setBatchPersist } =
+        store.getState();
+
+      setBatchPersist(sessionId, persist);
+      handleBatchStarted(sessionId);
+      handleBatchResponse(sessionId, {
+        metadata: { duration: 2 },
+        results: {
+          channels: [
+            {
+              alternatives: [
+                {
+                  transcript: "Hello world.",
+                  confidence: 1,
+                  words: [],
+                },
+              ],
+            },
+          ],
+        },
+      } satisfies BatchResponse);
+
+      expect(persist).toHaveBeenCalledWith(
+        [
+          {
+            text: " Hello",
+            start_ms: 0,
+            end_ms: 1000,
+            channel: 0,
+          },
+          {
+            text: " world.",
+            start_ms: 1000,
+            end_ms: 2000,
+            channel: 0,
+          },
+        ],
+        [],
+      );
+      expect(store.getState().batch[sessionId]).toBeUndefined();
+    });
+
+    test("handleBatchResponse reports truly empty batch results", () => {
+      const sessionId = "session-empty-batch";
+      const persist = vi.fn();
+      const { handleBatchStarted, handleBatchResponse, setBatchPersist } =
+        store.getState();
+
+      setBatchPersist(sessionId, persist);
+      handleBatchStarted(sessionId);
+      handleBatchResponse(sessionId, {
+        metadata: {},
+        results: {
+          channels: [
+            {
+              alternatives: [
+                {
+                  transcript: "",
+                  confidence: 1,
+                  words: [],
+                },
+              ],
+            },
+          ],
+        },
+      } satisfies BatchResponse);
+
+      expect(persist).not.toHaveBeenCalled();
+      expect(store.getState().batch[sessionId]).toMatchObject({
+        percentage: 0,
+        error: "No speech was detected in the recording.",
+        isComplete: false,
+        terminalReason: "failed",
+      });
     });
   });
 

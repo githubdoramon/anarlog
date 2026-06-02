@@ -7,9 +7,11 @@ import type {
 } from "@hypr/plugin-transcription";
 
 import type { BatchPersistCallback } from "./transcript";
-import { transformWordEntries } from "./utils";
+import { transformWordEntries, type WordEntry } from "./utils";
 
 import { type RuntimeSpeakerHint, type WordLike } from "~/stt/segment";
+
+const SYNTHETIC_WORD_SECONDS = 0.4;
 
 export type BatchPhase = "importing" | "transcribing";
 export type BatchTerminalReason = "failed" | "timed_out" | "stopped";
@@ -57,7 +59,7 @@ export type BatchActions = {
   clearBatchPersist: (sessionId: string) => void;
 };
 
-export const createBatchSlice = <T extends BatchState>(
+export const createBatchSlice = <T extends BatchState & BatchActions>(
   set: StoreApi<T>["setState"],
   get: StoreApi<T>["getState"],
 ): BatchState & BatchActions => ({
@@ -112,6 +114,10 @@ export const createBatchSlice = <T extends BatchState>(
 
     const [words, hints] = transformBatch(response);
     if (!words.length) {
+      get().handleBatchFailed(
+        sessionId,
+        "No speech was detected in the recording.",
+      );
       return;
     }
 
@@ -279,12 +285,24 @@ function transformBatch(
 
   response.results.channels.forEach((channel, channelIndex) => {
     const alternative = channel.alternatives[0];
-    if (!alternative || !alternative.words || !alternative.words.length) {
+    if (!alternative) {
+      return;
+    }
+
+    const wordEntries = alternative.words?.length
+      ? alternative.words
+      : synthesizeWordEntries(
+          alternative.transcript,
+          getMetadataDurationSeconds(response),
+          channelIndex,
+        );
+
+    if (!wordEntries.length) {
       return;
     }
 
     const [words, hints] = transformWordEntries(
-      alternative.words,
+      wordEntries,
       alternative.transcript,
       channelIndex,
     );
@@ -300,6 +318,59 @@ function transformBatch(
   });
 
   return [allWords, allHints];
+}
+
+function synthesizeWordEntries(
+  transcript: string,
+  durationSeconds: number | undefined,
+  channel: number,
+): WordEntry[] {
+  const tokens = transcript.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return [];
+  }
+
+  const duration =
+    durationSeconds ?? Math.max(tokens.length * SYNTHETIC_WORD_SECONDS, 0.05);
+  const wordDuration = duration / tokens.length;
+
+  return tokens.map((token, index) => {
+    const start = wordDuration * index;
+    const end =
+      index === tokens.length - 1 ? duration : wordDuration * (index + 1);
+
+    return {
+      word: stripAsciiPunctuation(token) || token,
+      punctuated_word: token,
+      start,
+      end,
+      channel,
+      speaker: null,
+    };
+  });
+}
+
+function stripAsciiPunctuation(token: string): string {
+  return token.replace(
+    /^[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]+|[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]+$/g,
+    "",
+  );
+}
+
+function getMetadataDurationSeconds(
+  response: BatchResponse,
+): number | undefined {
+  const metadata = response.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return undefined;
+  }
+
+  const duration = metadata.duration;
+  return typeof duration === "number" &&
+    Number.isFinite(duration) &&
+    duration > 0
+    ? duration
+    : undefined;
 }
 
 function mergeBatchPreview(

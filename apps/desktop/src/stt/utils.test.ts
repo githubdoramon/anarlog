@@ -108,7 +108,11 @@ describe("upsertSpeakerAssignment", () => {
         id: "new-word:user_speaker_assignment",
         word_id: "new-word",
         type: "user_speaker_assignment",
-        value: JSON.stringify({ human_id: "bob" }),
+        value: JSON.stringify({
+          human_id: "bob",
+          channel: 1,
+          speaker_index: 2,
+        }),
       },
     ]);
   });
@@ -213,7 +217,51 @@ describe("upsertSpeakerAssignment", () => {
         id: "speaker-2-word-new:user_speaker_assignment",
         word_id: "speaker-2-word-new",
         type: "user_speaker_assignment",
-        value: JSON.stringify({ human_id: "carol" }),
+        value: JSON.stringify({
+          human_id: "carol",
+          channel: 1,
+          speaker_index: 2,
+        }),
+      },
+    ]);
+  });
+
+  it("stores speaker scope even when the anchor word has no provider hint", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "anchor-word",
+          text: " hello",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([]),
+    });
+
+    upsertSpeakerAssignment(
+      store,
+      "transcript-1",
+      remoteSpeakerKey(0),
+      "alice",
+      "anchor-word",
+    );
+
+    expect(
+      JSON.parse(
+        store.getCell("transcripts", "transcript-1", "speaker_hints") as string,
+      ),
+    ).toEqual([
+      {
+        id: "anchor-word:user_speaker_assignment",
+        word_id: "anchor-word",
+        type: "user_speaker_assignment",
+        value: JSON.stringify({
+          human_id: "alice",
+          channel: 1,
+          speaker_index: 0,
+        }),
       },
     ]);
   });

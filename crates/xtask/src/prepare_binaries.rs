@@ -25,6 +25,11 @@ pub(crate) fn prepare_binaries() -> Result<()> {
         "{cargo} build --release --target {triple} -p chrome-native-host"
     )
     .run()?;
+    cmd!(
+        sh,
+        "{cargo} build --release --target {triple} -p transcribe-soniqo --bin char-sidecar-soniqo-aligner"
+    )
+    .run()?;
 
     fs::create_dir_all(&binaries_dir).context("create binaries/")?;
 
@@ -37,6 +42,15 @@ pub(crate) fn prepare_binaries() -> Result<()> {
     fs::copy(&src, &dst).with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
 
     println!("prepare-binaries: binaries/char-chrome-native-host-{triple}{ext}");
+    let src = src_tauri
+        .join("target")
+        .join(&triple)
+        .join("release")
+        .join(format!("char-sidecar-soniqo-aligner{ext}"));
+    let dst = binaries_dir.join(format!("char-sidecar-soniqo-aligner-{triple}{ext}"));
+    fs::copy(&src, &dst).with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+
+    println!("prepare-binaries: binaries/char-sidecar-soniqo-aligner-{triple}{ext}");
     Ok(())
 }
 

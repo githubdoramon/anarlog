@@ -49,6 +49,7 @@ pub struct ListenerArgs {
     pub session_id: String,
     pub participant_human_ids: Vec<String>,
     pub self_human_id: Option<String>,
+    pub expected_remote_speaker_count: Option<u32>,
 }
 
 pub struct ListenerState {

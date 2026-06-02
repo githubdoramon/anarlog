@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    FinalizedWord, IdentityAssignment, SegmentKey, SegmentWord, SpeakerLabelContext,
-    SpeakerLabeler, WordState, build_segments, channel_assignments_for_participants,
-    render_speaker_label, segment_options_for_participants,
+    FinalizedWord, IdentityAssignment, IdentityScope, SegmentBuilderOptions, SegmentKey,
+    SegmentWord, SpeakerLabelContext, SpeakerLabeler, WordState, build_segments,
+    channel_assignments_for_participants, render_speaker_label, segment_options_for_participants,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -71,13 +71,15 @@ pub fn render_transcript_segments(
             .map(|started_at| started_at - base_started_at)
             .unwrap_or(0);
 
-        let (words, mut assignments) =
+        let (words, explicit_assignments) =
             offset_transcript_data(transcript.words, transcript.assignments, offset);
-        let channel_assignments =
+        let mut assignments =
             channel_assignments_for_participants(&participant_human_ids, self_human_id.as_deref());
-        assignments.extend(channel_assignments);
+        assignments.extend(explicit_assignments);
+        let mut transcript_segment_options = segment_options.clone();
+        include_explicit_channel_assignments(&mut transcript_segment_options, &assignments);
 
-        let segments = build_segments(&words, &[], &assignments, Some(&segment_options));
+        let segments = build_segments(&words, &[], &assignments, Some(&transcript_segment_options));
         all_segments.extend(segments);
     }
 
@@ -148,6 +150,20 @@ fn earliest_started_at(transcripts: &[RenderTranscriptInput]) -> i64 {
         .filter_map(|transcript| transcript.started_at)
         .min()
         .unwrap_or(0)
+}
+
+fn include_explicit_channel_assignments(
+    options: &mut SegmentBuilderOptions,
+    assignments: &[IdentityAssignment],
+) {
+    let complete_channels = options.complete_channels.get_or_insert_with(Vec::new);
+    for assignment in assignments {
+        if let IdentityScope::Channel { channel } = assignment.scope
+            && !complete_channels.contains(&channel)
+        {
+            complete_channels.push(channel);
+        }
+    }
 }
 
 pub fn normalize_rendered_segment_words(words: Vec<SegmentWord>) -> Vec<SegmentWord> {
@@ -361,6 +377,58 @@ mod tests {
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].speaker_label, "Remote");
         assert_eq!(segments[0].text, "remote reply");
+    }
+
+    #[test]
+    fn explicit_channel_assignment_overrides_auto_participant_assignment() {
+        let segments = render_transcript_segments(RenderTranscriptRequest {
+            transcripts: vec![RenderTranscriptInput {
+                started_at: Some(0),
+                words: vec![word("w1", " hello", 0, 100, 0)],
+                assignments: vec![channel_assignment("remote", ChannelProfile::DirectMic)],
+            }],
+            participant_human_ids: vec!["self".to_string(), "remote".to_string()],
+            self_human_id: Some("self".to_string()),
+            humans: vec![
+                RenderTranscriptHuman {
+                    human_id: "self".to_string(),
+                    name: "Self".to_string(),
+                },
+                RenderTranscriptHuman {
+                    human_id: "remote".to_string(),
+                    name: "Remote".to_string(),
+                },
+            ],
+        });
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].key.speaker_human_id.as_deref(), Some("remote"));
+        assert_eq!(segments[0].speaker_label, "Remote");
+    }
+
+    #[test]
+    fn explicit_remote_channel_assignment_marks_channel_complete() {
+        let segments = render_transcript_segments(RenderTranscriptRequest {
+            transcripts: vec![RenderTranscriptInput {
+                started_at: Some(0),
+                words: vec![word("w1", " hello", 0, 100, 1)],
+                assignments: vec![channel_assignment("remote", ChannelProfile::RemoteParty)],
+            }],
+            participant_human_ids: vec![
+                "self".to_string(),
+                "remote".to_string(),
+                "third".to_string(),
+            ],
+            self_human_id: Some("self".to_string()),
+            humans: vec![RenderTranscriptHuman {
+                human_id: "remote".to_string(),
+                name: "Remote".to_string(),
+            }],
+        });
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].key.speaker_human_id.as_deref(), Some("remote"));
+        assert_eq!(segments[0].speaker_label, "Remote");
     }
 
     #[test]

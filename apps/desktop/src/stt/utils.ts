@@ -4,12 +4,15 @@ import type { SpeakerHintWithId, WordWithId } from "./types";
 
 import type { SegmentKey } from "~/stt/live-segment";
 
-interface TranscriptStore {
+interface TranscriptReader {
   getCell(
     tableId: "transcripts",
     rowId: string,
     cellId: "words" | "speaker_hints",
   ): unknown;
+}
+
+interface TranscriptStore extends TranscriptReader {
   setCell(
     tableId: "transcripts",
     rowId: string,
@@ -19,7 +22,7 @@ interface TranscriptStore {
 }
 
 export function parseTranscriptWords(
-  store: TranscriptStore,
+  store: TranscriptReader,
   transcriptId: string,
 ): WordWithId[] {
   const wordsJson = store.getCell("transcripts", transcriptId, "words");
@@ -35,7 +38,7 @@ export function parseTranscriptWords(
 }
 
 export function parseTranscriptHints(
-  store: TranscriptStore,
+  store: TranscriptReader,
   transcriptId: string,
 ): SpeakerHintWithId[] {
   const hintsJson = store.getCell("transcripts", transcriptId, "speaker_hints");
@@ -137,7 +140,11 @@ export function upsertSpeakerAssignment(
     id: `${anchorWordId}:user_speaker_assignment`,
     word_id: anchorWordId,
     type: "user_speaker_assignment",
-    value: JSON.stringify({ human_id: humanId }),
+    value: JSON.stringify({
+      human_id: humanId,
+      channel,
+      speaker_index: nextScope.speakerIndex,
+    }),
   };
 
   const nextHints = hints.filter((hint) => {
@@ -171,6 +178,11 @@ function getSpeakerAssignmentScopeForHint(
   wordsById: Map<string, WordWithId>,
   hint: SpeakerHintWithId,
 ): SpeakerAssignmentScope | null {
+  const assignedScope = parseUserSpeakerAssignmentScope(hint);
+  if (assignedScope) {
+    return assignedScope;
+  }
+
   const wordId = hint.word_id;
   if (typeof wordId !== "string") {
     return null;
@@ -219,6 +231,40 @@ function findSpeakerIndexForWord(
   } catch {
     return null;
   }
+}
+
+function parseUserSpeakerAssignmentScope(
+  hint: SpeakerHintWithId,
+): SpeakerAssignmentScope | null {
+  if (hint.type !== "user_speaker_assignment") {
+    return null;
+  }
+
+  const value =
+    typeof hint.value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(hint.value);
+          } catch {
+            return undefined;
+          }
+        })()
+      : hint.value;
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  return {
+    channel:
+      "channel" in value && typeof value.channel === "number"
+        ? value.channel
+        : undefined,
+    speakerIndex:
+      "speaker_index" in value && typeof value.speaker_index === "number"
+        ? value.speaker_index
+        : null,
+  };
 }
 
 function toStorageSpeakerHints(

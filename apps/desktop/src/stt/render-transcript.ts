@@ -116,6 +116,18 @@ function buildRenderTranscriptRequest(
     }
 
     for (const hint of transcript.speaker_hints ?? []) {
+      if (hint.type !== "provider_speaker_index") {
+        continue;
+      }
+
+      normalizeSpeakerHint(hint, words, wordIndexById);
+    }
+
+    for (const hint of transcript.speaker_hints ?? []) {
+      if (hint.type === "provider_speaker_index") {
+        continue;
+      }
+
       const normalized = normalizeSpeakerHint(hint, words, wordIndexById);
       if (normalized) {
         assignments.push(normalized);
@@ -189,36 +201,48 @@ function normalizeSpeakerHint(
     hint.type === "user_speaker_assignment" &&
     typeof (value as { human_id?: unknown }).human_id === "string"
   ) {
-    const humanId = (value as { human_id: string }).human_id;
-    return word.speaker_index == null
+    const assignment = value as {
+      human_id: string;
+      channel?: unknown;
+      speaker_index?: unknown;
+    };
+    const humanId = assignment.human_id;
+    const channel =
+      typeof assignment.channel === "number"
+        ? assignment.channel
+        : word.channel;
+    const speakerIndex =
+      typeof assignment.speaker_index === "number"
+        ? assignment.speaker_index
+        : word.speaker_index;
+
+    return speakerIndex == null
       ? {
           human_id: humanId,
           scope: {
             kind: "channel",
-            channel:
-              word.channel === 0
-                ? "DirectMic"
-                : word.channel === 1
-                  ? "RemoteParty"
-                  : "MixedCapture",
+            channel: toIdentityChannel(channel),
           },
         }
       : {
           human_id: humanId,
           scope: {
             kind: "channel_speaker",
-            channel:
-              word.channel === 0
-                ? "DirectMic"
-                : word.channel === 1
-                  ? "RemoteParty"
-                  : "MixedCapture",
-            speaker_index: word.speaker_index,
+            channel: toIdentityChannel(channel),
+            speaker_index: speakerIndex,
           },
         };
   }
 
   return null;
+}
+
+function toIdentityChannel(channel: number) {
+  return channel === 0
+    ? "DirectMic"
+    : channel === 1
+      ? "RemoteParty"
+      : "MixedCapture";
 }
 
 function parseHintValue(value: unknown): unknown {

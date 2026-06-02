@@ -26,6 +26,11 @@ import {
   getLiveTranscriptionConfig,
   getTranscriptionLanguages,
 } from "~/stt/capabilities";
+import {
+  collectSessionParticipantHumanIds,
+  getBatchSpeakerBounds,
+  getExpectedRemoteSpeakerCount,
+} from "~/stt/diarization";
 import { applyLiveTranscriptDelta } from "~/stt/utils";
 
 const AUDIO_PATH_RETRY_COUNT = 10;
@@ -55,6 +60,11 @@ async function resolveStoppedAudioPath(
     );
   }
 
+  console.warn("[listener] stopped audio path missing after retries", {
+    sessionId,
+    retryCount: AUDIO_PATH_RETRY_COUNT,
+    retryDelayMs: AUDIO_PATH_RETRY_DELAY_MS,
+  });
   return null;
 }
 
@@ -79,7 +89,6 @@ export function getPostCaptureAction(
 export function useStartListening(sessionId: string) {
   const { user_id } = main.UI.useValues(main.STORE_ID);
   const store = main.UI.useStore(main.STORE_ID);
-  const indexes = main.UI.useIndexes(main.STORE_ID);
 
   const aiLanguage = useConfigValue("ai_language");
   const spokenLanguages = useConfigValue("spoken_languages");
@@ -103,6 +112,13 @@ export function useStartListening(sessionId: string) {
     const createdAt = new Date().toISOString();
     const captureConn = conn;
     const canRunBatchAfterStop = canRunBatchTranscription(captureConn);
+    const expectedRemoteSpeakerCount = getExpectedRemoteSpeakerCount(
+      store,
+      sessionId,
+    );
+    const batchSpeakerBounds = getBatchSpeakerBounds(
+      expectedRemoteSpeakerCount,
+    );
 
     const onStopped: OnStoppedCallback = async (_sessionId, details) => {
       const audioPath = await resolveStoppedAudioPath(
@@ -128,6 +144,8 @@ export function useStartListening(sessionId: string) {
             model: captureConn?.model,
             baseUrl: captureConn?.baseUrl,
             apiKey: captureConn?.apiKey,
+            numSpeakers: batchSpeakerBounds?.numSpeakers,
+            maxSpeakers: batchSpeakerBounds?.maxSpeakers,
           });
         } catch (error) {
           if (isStoppedTranscriptionError(error)) {
@@ -173,25 +191,9 @@ export function useStartListening(sessionId: string) {
       });
     };
 
-    const participantHumanIds: string[] = [];
-    store.forEachRow(
-      "mapping_session_participant",
-      (mappingId, _forEachCell) => {
-        const sid = store.getCell(
-          "mapping_session_participant",
-          mappingId,
-          "session_id",
-        );
-        if (sid !== sessionId) return;
-        const hid = store.getCell(
-          "mapping_session_participant",
-          mappingId,
-          "human_id",
-        );
-        if (typeof hid === "string" && hid) {
-          participantHumanIds.push(hid);
-        }
-      },
+    const participantHumanIds = collectSessionParticipantHumanIds(
+      store,
+      sessionId,
     );
 
     const languages = getTranscriptionLanguages(aiLanguage, spokenLanguages);
@@ -213,6 +215,7 @@ export function useStartListening(sessionId: string) {
         transcription_mode: liveTranscriptionConfig.transcriptionMode,
         participant_human_ids: participantHumanIds,
         self_human_id: typeof user_id === "string" ? user_id : null,
+        expected_remote_speaker_count: expectedRemoteSpeakerCount ?? null,
       },
       {
         handlePersist,
@@ -241,7 +244,6 @@ export function useStartListening(sessionId: string) {
     aiLanguage,
     conn,
     store,
-    indexes,
     sessionId,
     start,
     keywords,
