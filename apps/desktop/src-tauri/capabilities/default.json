@@ -67,6 +67,7 @@
     "misc:default",
     "fs-sync:default",
     "fs2:default",
+    "fs2:allow-write-text-file",
     "git:default",
     "os:default",
     "opener2:default",

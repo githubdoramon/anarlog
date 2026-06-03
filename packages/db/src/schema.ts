@@ -1,4 +1,10 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const templates = sqliteTable("templates", {
   id: text("id").primaryKey(),
@@ -62,5 +68,33 @@ export const events = sqliteTable(
   (table) => [
     index("idx_events_calendar_id").on(table.calendarId),
     index("idx_events_started_at").on(table.startedAt),
+  ],
+);
+
+export const meetingTranscriptUploadQueue = sqliteTable(
+  "meeting_transcript_upload_queue",
+  {
+    id: text("id").primaryKey().notNull(),
+    sessionId: text("session_id").notNull().default(""),
+    transcriptHash: text("transcript_hash").notNull().default(""),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    status: text("status").notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: text("next_attempt_at").notNull().default(""),
+    lastError: text("last_error").notNull().default(""),
+    serverId: text("server_id").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    sentAt: text("sent_at").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("idx_meeting_transcript_upload_queue_session_hash").on(
+      table.sessionId,
+      table.transcriptHash,
+    ),
+    index("idx_meeting_transcript_upload_queue_retry").on(
+      table.status,
+      table.nextAttemptAt,
+    ),
   ],
 );

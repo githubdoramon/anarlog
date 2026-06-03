@@ -2,11 +2,13 @@ import { useRouteContext } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef } from "react";
 
 import { useLanguageModel, useLLMConnection } from "~/ai/hooks";
+import { useAuth } from "~/auth";
 import { useSessionTab } from "~/chat/components/use-session-tab";
 import { buildChatTools } from "~/chat/tools";
 import { useRegisterTools } from "~/contexts/tool";
 import { useSearchEngine } from "~/search/contexts/engine";
 import { initEnhancerService } from "~/services/enhancer";
+import { initMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
 import { getSessionEvent } from "~/session/utils";
 import { useDesktopTabLifecycle } from "~/shared/desktop-tab-lifecycle";
 import * as main from "~/store/tinybase/store/main";
@@ -35,8 +37,30 @@ export function ClassicMainServices() {
     <>
       <ToolRegistration />
       <EnhancerInit />
+      <MeetingTranscriptUploadInit />
     </>
   );
+}
+
+function MeetingTranscriptUploadInit() {
+  const auth = useAuth();
+  const store = main.UI.useStore(main.STORE_ID);
+  const authRef = useRef(auth);
+  authRef.current = auth;
+
+  useEffect(() => {
+    if (!store) return;
+
+    const service = initMeetingTranscriptUploadService({
+      store,
+      getAuthHeaders: () => authRef.current.getHeaders(),
+      getCurrentUserEmail: () => authRef.current.session?.user.email,
+    });
+
+    return () => service.dispose();
+  }, [store]);
+
+  return null;
 }
 
 function ToolRegistration() {

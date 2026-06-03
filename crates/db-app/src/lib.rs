@@ -27,6 +27,11 @@ pub const APP_MIGRATION_STEPS: &[hypr_db_migrate::MigrationStep] = &[
         scope: hypr_db_migrate::MigrationScope::Plain,
         sql: include_str!("../migrations/20260414120000_calendars_events.sql"),
     },
+    hypr_db_migrate::MigrationStep {
+        id: "20260602120000_meeting_transcript_upload_queue",
+        scope: hypr_db_migrate::MigrationScope::Plain,
+        sql: include_str!("../migrations/20260602120000_meeting_transcript_upload_queue.sql"),
+    },
 ];
 
 pub fn schema() -> hypr_db_migrate::DbSchema {
@@ -87,7 +92,13 @@ mod tests {
 
         assert_eq!(
             tables,
-            vec!["_sqlx_migrations", "calendars", "events", "templates"]
+            vec![
+                "_sqlx_migrations",
+                "calendars",
+                "events",
+                "meeting_transcript_upload_queue",
+                "templates"
+            ]
         );
     }
 

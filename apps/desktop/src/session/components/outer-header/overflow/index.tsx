@@ -12,6 +12,7 @@ import {
 } from "@hypr/ui/components/ui/dropdown-menu";
 
 import { DeleteNote, DeleteRecording } from "./delete";
+import { DownloadDigitalBrainPayload } from "./digital-brain-payload";
 import { ExportModal } from "./export-modal";
 import { Listening } from "./listening";
 import { Copy, ShowInFinder } from "./misc";
@@ -58,6 +59,10 @@ export function OverflowButton({
               <FileTextIcon />
               <span>Export</span>
             </DropdownMenuItem>
+            <DownloadDigitalBrainPayload
+              sessionId={sessionId}
+              hasTranscript={hasTranscript}
+            />
             <DropdownMenuSeparator />
             <Listening sessionId={sessionId} hasTranscript={hasTranscript} />
             <DropdownMenuSeparator />

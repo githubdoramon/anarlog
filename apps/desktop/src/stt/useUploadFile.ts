@@ -19,6 +19,7 @@ import { ChannelProfile } from "./segment";
 import { isStoppedTranscriptionError, useRunBatch } from "./useRunBatch";
 
 import { getEnhancerService } from "~/services/enhancer";
+import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
 import * as main from "~/store/tinybase/store/main";
 import { type Tab, useTabs } from "~/store/zustand/tabs";
 
@@ -147,6 +148,9 @@ export function useUploadFile(sessionId: string) {
               });
 
               triggerEnhance();
+              void getMeetingTranscriptUploadService()?.enqueueSession(
+                sessionId,
+              );
             }),
           ),
         );

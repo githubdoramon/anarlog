@@ -14,6 +14,7 @@ import {
 import { useSTTConnection } from "./useSTTConnection";
 
 import { getEnhancerService } from "~/services/enhancer";
+import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
 import { getSessionEventById } from "~/session/utils";
 import { useConfigValue } from "~/shared/config";
 import { id } from "~/shared/utils";
@@ -163,6 +164,9 @@ export function useStartListening(sessionId: string) {
         return;
       }
 
+      if (details.liveTranscriptionActive) {
+        void getMeetingTranscriptUploadService()?.enqueueSession(sessionId);
+      }
       getEnhancerService()?.queueAutoEnhanceIfSummaryEmpty(sessionId);
     };
 

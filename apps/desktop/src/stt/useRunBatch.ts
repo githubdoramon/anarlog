@@ -7,6 +7,7 @@ import { useListener } from "./contexts";
 import { useKeywords } from "./useKeywords";
 import { useSTTConnection } from "./useSTTConnection";
 
+import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
 import { useConfigValue } from "~/shared/config";
 import { id } from "~/shared/utils";
 import * as main from "~/store/tinybase/store/main";
@@ -255,6 +256,7 @@ export const useRunBatch = (sessionId: string) => {
       };
 
       await startTranscription(params, { handlePersist: persist });
+      void getMeetingTranscriptUploadService()?.enqueueSession(sessionId);
     },
     [
       conn,
