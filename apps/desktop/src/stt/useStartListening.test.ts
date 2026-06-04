@@ -15,6 +15,10 @@ const {
   useConfigValueMock,
   useSTTConnectionMock,
   isSupportedLanguagesLiveMock,
+  audioPathMock,
+  audioSourceMetadataMock,
+  createAppendBatchPersistMock,
+  appendPersistMock,
 } = vi.hoisted(() => ({
   queueAutoEnhanceIfSummaryEmptyMock: vi.fn(),
   startMock: vi.fn(),
@@ -26,6 +30,17 @@ const {
   useConfigValueMock: vi.fn(),
   useSTTConnectionMock: vi.fn(),
   isSupportedLanguagesLiveMock: vi.fn(),
+  audioPathMock: vi.fn(),
+  audioSourceMetadataMock: vi.fn(),
+  createAppendBatchPersistMock: vi.fn(),
+  appendPersistMock: vi.fn(),
+}));
+
+vi.mock("@hypr/plugin-fs-sync", () => ({
+  commands: {
+    audioPath: audioPathMock,
+    audioSourceMetadata: audioSourceMetadataMock,
+  },
 }));
 
 vi.mock("@hypr/plugin-transcription", () => ({
@@ -45,6 +60,7 @@ vi.mock("./useKeywords", () => ({
 vi.mock("./useRunBatch", () => ({
   STOPPED_TRANSCRIPTION_ERROR_MESSAGE: "Transcription stopped.",
   canRunBatchTranscription: vi.fn(() => true),
+  createAppendBatchPersist: createAppendBatchPersistMock,
   isStoppedTranscriptionError: vi.fn(
     (error: unknown) =>
       (error instanceof Error ? error.message : String(error)) ===
@@ -161,6 +177,7 @@ describe("useStartListening", () => {
     });
     useStoreMock.mockReturnValue({
       getCell: vi.fn(() => ""),
+      getValue: vi.fn(() => "user-1"),
       forEachRow: vi.fn(),
       setRow: vi.fn(),
       delRow: vi.fn(),
@@ -172,6 +189,15 @@ describe("useStartListening", () => {
       status: "ok",
       data: true,
     });
+    audioPathMock.mockResolvedValue({
+      status: "error",
+      error: "audio_path_not_found",
+    });
+    audioSourceMetadataMock.mockResolvedValue({
+      status: "ok",
+      data: { durationMs: null },
+    });
+    createAppendBatchPersistMock.mockReturnValue(appendPersistMock);
   });
 
   test("runs batch transcription after record-only capture stops", async () => {
@@ -193,10 +219,90 @@ describe("useStartListening", () => {
       });
     });
 
-    expect(runBatchMock).toHaveBeenCalledWith("/tmp/session.wav");
+    expect(runBatchMock).toHaveBeenCalledWith(
+      "/tmp/session.wav",
+      expect.objectContaining({
+        provider: "hyprnote",
+        model: "am-test",
+      }),
+    );
     expect(queueAutoEnhanceIfSummaryEmptyMock).toHaveBeenCalledWith(
       "session-1",
     );
+  });
+
+  test("batch appends resumed capture after existing transcript audio", async () => {
+    const setRow = vi.fn();
+    useIndexesMock.mockReturnValue({
+      getSliceRowIds: vi.fn(() => ["transcript-1"]),
+    });
+    useStoreMock.mockReturnValue({
+      getCell: vi.fn((tableId, rowId, cellId) => {
+        if (tableId === "sessions" && cellId === "raw_md") {
+          return "memo";
+        }
+        if (
+          tableId === "transcripts" &&
+          rowId === "transcript-1" &&
+          cellId === "started_at"
+        ) {
+          return 1_000;
+        }
+        return "";
+      }),
+      getValue: vi.fn(() => "user-1"),
+      forEachRow: vi.fn(),
+      setRow,
+      setCell: vi.fn(),
+      delRow: vi.fn(),
+      transaction: vi.fn((fn: () => void) => fn()),
+    });
+    audioPathMock.mockResolvedValue({
+      status: "ok",
+      data: "/tmp/session.mp3",
+    });
+    audioSourceMetadataMock.mockResolvedValue({
+      status: "ok",
+      data: { durationMs: 4_000 },
+    });
+
+    const { result } = renderHook(() => useStartListening("session-1"));
+
+    await act(async () => {
+      await result.current();
+    });
+
+    const onStopped = startMock.mock.calls[0]?.[1]?.onStopped;
+
+    await act(async () => {
+      await onStopped?.("session-1", {
+        durationSeconds: 42,
+        audioPath: "/tmp/session.mp3",
+        requestedLiveTranscription: false,
+        liveTranscriptionActive: false,
+      });
+    });
+
+    expect(audioSourceMetadataMock).toHaveBeenCalledWith("/tmp/session.mp3");
+    expect(runBatchMock).toHaveBeenCalledWith(
+      "/tmp/session.mp3",
+      expect.objectContaining({
+        handlePersist: expect.any(Function),
+      }),
+    );
+
+    expect(createAppendBatchPersistMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-1",
+        startedAt: 5_000,
+        memoMd: "memo",
+        cutoffMs: 4_000,
+      }),
+    );
+    expect(runBatchMock.mock.calls[0]?.[1]?.handlePersist).toBe(
+      appendPersistMock,
+    );
+    expect(setRow).not.toHaveBeenCalled();
   });
 
   test("forces batch transcription for batch-only local models with realtime stored", async () => {

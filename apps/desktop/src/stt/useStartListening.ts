@@ -8,6 +8,7 @@ import { useListener } from "./contexts";
 import { useKeywords } from "./useKeywords";
 import {
   canRunBatchTranscription,
+  createAppendBatchPersist,
   isStoppedTranscriptionError,
   useRunBatch,
 } from "./useRunBatch";
@@ -68,6 +69,57 @@ async function resolveStoppedAudioPath(
   return null;
 }
 
+async function resolveExistingAudioDurationMs(sessionId: string) {
+  const pathResult = await fsSyncCommands.audioPath(sessionId);
+  if (pathResult.status === "error" || !pathResult.data) {
+    return 0;
+  }
+
+  const metadataResult = await fsSyncCommands.audioSourceMetadata(
+    pathResult.data,
+  );
+  if (metadataResult.status === "error") {
+    return 0;
+  }
+
+  const durationMs = metadataResult.data.durationMs;
+  return typeof durationMs === "number" && durationMs > 0 ? durationMs : 0;
+}
+
+function getSessionTranscriptIds(
+  indexes: ReturnType<typeof main.UI.useIndexes>,
+  sessionId: string,
+): string[] {
+  return (
+    indexes?.getSliceRowIds(main.INDEXES.transcriptBySession, sessionId) ?? []
+  );
+}
+
+function getAppendStartedAt(
+  store: NonNullable<ReturnType<typeof main.UI.useStore>>,
+  transcriptIds: string[],
+  offsetMs: number,
+  fallbackStartedAt: number,
+) {
+  if (transcriptIds.length === 0 || offsetMs <= 0) {
+    return fallbackStartedAt;
+  }
+
+  const startedAts = transcriptIds
+    .map((transcriptId) =>
+      store.getCell("transcripts", transcriptId, "started_at"),
+    )
+    .filter(
+      (startedAt): startedAt is number =>
+        typeof startedAt === "number" && Number.isFinite(startedAt),
+    );
+  const earliestStartedAt = Math.min(...startedAts);
+
+  return Number.isFinite(earliestStartedAt)
+    ? earliestStartedAt + offsetMs
+    : fallbackStartedAt;
+}
+
 export function getPostCaptureAction(
   details: {
     audioPath: string | null;
@@ -89,6 +141,7 @@ export function getPostCaptureAction(
 export function useStartListening(sessionId: string) {
   const { user_id } = main.UI.useValues(main.STORE_ID);
   const store = main.UI.useStore(main.STORE_ID);
+  const indexes = main.UI.useIndexes(main.STORE_ID);
 
   const aiLanguage = useConfigValue("ai_language");
   const spokenLanguages = useConfigValue("spoken_languages");
@@ -110,6 +163,17 @@ export function useStartListening(sessionId: string) {
     const startedAt = Date.now();
     const memoMd = store.getCell("sessions", sessionId, "raw_md");
     const createdAt = new Date().toISOString();
+    const existingTranscriptIds = getSessionTranscriptIds(indexes, sessionId);
+    const hasExistingTranscripts = existingTranscriptIds.length > 0;
+    const resumeOffsetMs = hasExistingTranscripts
+      ? await resolveExistingAudioDurationMs(sessionId)
+      : 0;
+    const transcriptStartedAt = getAppendStartedAt(
+      store,
+      existingTranscriptIds,
+      resumeOffsetMs,
+      startedAt,
+    );
     const captureConn = conn;
     const canRunBatchAfterStop = canRunBatchTranscription(captureConn);
     const expectedRemoteSpeakerCount = getExpectedRemoteSpeakerCount(
@@ -139,7 +203,22 @@ export function useStartListening(sessionId: string) {
 
       if (postCaptureAction === "batch_then_enhance") {
         try {
+          const handlePersist =
+            hasExistingTranscripts && resumeOffsetMs > 0
+              ? createAppendBatchPersist({
+                  store,
+                  sessionId,
+                  userId: user_id ?? "",
+                  createdAt,
+                  startedAt: transcriptStartedAt,
+                  memoMd: typeof memoMd === "string" ? memoMd : "",
+                  providerId: captureConn?.provider ?? "",
+                  cutoffMs: resumeOffsetMs,
+                })
+              : undefined;
+
           await runBatchRef.current(audioPath!, {
+            handlePersist,
             provider: captureConn?.provider,
             model: captureConn?.model,
             baseUrl: captureConn?.baseUrl,
@@ -177,7 +256,7 @@ export function useStartListening(sessionId: string) {
           session_id: sessionId,
           user_id: user_id ?? "",
           created_at: createdAt,
-          started_at: startedAt,
+          started_at: transcriptStartedAt,
           words: "[]",
           speaker_hints: "[]",
           memo_md: typeof memoMd === "string" ? memoMd : "",
@@ -243,6 +322,7 @@ export function useStartListening(sessionId: string) {
   }, [
     aiLanguage,
     conn,
+    indexes,
     store,
     sessionId,
     start,
