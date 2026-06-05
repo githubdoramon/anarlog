@@ -122,6 +122,8 @@ describe("PostSessionAccessory", () => {
     useListenerMock.mockImplementation((selector) =>
       selector({
         handleBatchFailed: handleBatchFailedMock,
+        getSessionMode: vi.fn(() => "inactive"),
+        canStartLiveSession: vi.fn(() => true),
         stopTranscription: vi.fn(),
       }),
     );
@@ -200,5 +202,20 @@ describe("PostSessionAccessory", () => {
     expect(scrollArea?.className).toContain("flex-1");
     expect(scrollArea?.className).not.toContain("h-[300px]");
     expect(scrollArea?.parentElement?.className).toContain("flex-1");
+  });
+
+  it("does not render resume listening inside the transcript panel", () => {
+    render(
+      <PostSessionAccessory
+        sessionId="session-1"
+        hasAudio
+        hasTranscript
+        isTranscriptExpanded
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Resume listening" }),
+    ).toBeNull();
   });
 });

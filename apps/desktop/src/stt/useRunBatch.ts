@@ -53,6 +53,17 @@ const DIRECT_BATCH_PROVIDERS: Set<TranscriptionParams["provider"]> = new Set([
 
 export const STOPPED_TRANSCRIPTION_ERROR_MESSAGE = "Transcription stopped.";
 
+type BatchAppendPersistOptions = {
+  store: NonNullable<ReturnType<typeof main.UI.useStore>>;
+  sessionId: string;
+  userId: string;
+  createdAt: string;
+  startedAt: number;
+  memoMd: string;
+  providerId: string;
+  cutoffMs: number;
+};
+
 export function getBatchProvider(
   provider: string,
   model: string,
@@ -271,3 +282,101 @@ export const useRunBatch = (sessionId: string) => {
     ],
   );
 };
+
+export function createAppendBatchPersist({
+  store,
+  sessionId,
+  userId,
+  createdAt,
+  startedAt,
+  memoMd,
+  providerId,
+  cutoffMs,
+}: BatchAppendPersistOptions): BatchPersistCallback {
+  let transcriptId: string | null = null;
+
+  return (words, hints) => {
+    const keptEntries = words
+      .map((word, originalIndex) => ({ word, originalIndex }))
+      .filter(({ word }) => word.end_ms > cutoffMs);
+
+    if (keptEntries.length === 0) {
+      return;
+    }
+
+    if (!transcriptId) {
+      transcriptId = id();
+      const transcriptRow = {
+        session_id: sessionId,
+        user_id: userId,
+        created_at: createdAt,
+        started_at: startedAt,
+        words: "[]",
+        speaker_hints: "[]",
+        memo_md: memoMd,
+      } satisfies TranscriptStorage;
+
+      store.setRow("transcripts", transcriptId, transcriptRow);
+    }
+
+    const currentTranscriptId = transcriptId;
+    const existingWords = parseTranscriptWords(store, currentTranscriptId);
+    const existingHints = parseTranscriptHints(store, currentTranscriptId);
+    const nextWordIndexByOriginalIndex = new Map<number, number>();
+    const newWords: WordWithId[] = [];
+    const newWordIds: string[] = [];
+
+    keptEntries.forEach(({ word, originalIndex }) => {
+      const wordId = id();
+      nextWordIndexByOriginalIndex.set(originalIndex, newWords.length);
+      newWordIds.push(wordId);
+      newWords.push({
+        id: wordId,
+        text: word.text,
+        start_ms: Math.max(0, word.start_ms - cutoffMs),
+        end_ms: Math.max(0, word.end_ms - cutoffMs),
+        channel: word.channel,
+      });
+    });
+
+    const newHints: SpeakerHintWithId[] = [];
+
+    hints.forEach((hint) => {
+      if (hint.data.type !== "provider_speaker_index") {
+        return;
+      }
+
+      const nextWordIndex = nextWordIndexByOriginalIndex.get(hint.wordIndex);
+      if (nextWordIndex === undefined) {
+        return;
+      }
+
+      const wordId = newWordIds[nextWordIndex];
+      const word = keptEntries[nextWordIndex]?.word;
+
+      if (!wordId || !word) {
+        return;
+      }
+
+      newHints.push({
+        id: id(),
+        word_id: wordId,
+        type: "provider_speaker_index",
+        value: JSON.stringify({
+          provider: hint.data.provider ?? providerId,
+          channel: hint.data.channel ?? word.channel,
+          speaker_index: hint.data.speaker_index,
+        }),
+      });
+    });
+
+    updateTranscriptWords(store, currentTranscriptId, [
+      ...existingWords,
+      ...newWords,
+    ]);
+    updateTranscriptHints(store, currentTranscriptId, [
+      ...existingHints,
+      ...newHints,
+    ]);
+  };
+}
