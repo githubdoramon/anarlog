@@ -5,6 +5,7 @@ Default permissions for transcription commands.
 #### This default permission set includes the following:
 
 - `allow-export-to-vtt`
+- `allow-extract-voice-embeddings`
 - `allow-get-capture-state`
 - `allow-get-current-microphone-device`
 - `allow-get-mic-muted`
@@ -55,6 +56,32 @@ Enables the export_to_vtt command without any pre-configured scope.
 <td>
 
 Denies the export_to_vtt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`transcription:allow-extract-voice-embeddings`
+
+</td>
+<td>
+
+Enables the extract_voice_embeddings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`transcription:deny-extract-voice-embeddings`
+
+</td>
+<td>
+
+Denies the extract_voice_embeddings command without any pre-configured scope.
 
 </td>
 </tr>

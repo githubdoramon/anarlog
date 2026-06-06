@@ -26,7 +26,7 @@ export type DigitalBrainPayloadStore = {
   getRowIds: (tableId: "events") => string[];
   getValue: (valueId: "user_id") => unknown;
   forEachRow: (
-    tableId: "transcripts" | "mapping_session_participant",
+    tableId: "transcripts" | "mapping_session_participant" | "humans",
     callback: (rowId: string, forEachCell: unknown) => void,
   ) => void;
 };
@@ -68,6 +68,11 @@ type SegmentKey = {
   channel: SegmentChannel;
   speaker_index: number | null;
   human_id: string | null;
+  assignment_source:
+    | "user_assignment"
+    | "voice_auto_assignment"
+    | "inferred_channel"
+    | null;
 };
 
 type SegmentWord = {
@@ -78,6 +83,11 @@ type SegmentWord = {
   channel: SegmentChannel;
   speaker_index: number | null;
   human_id: string | null;
+  assignment_source:
+    | "user_assignment"
+    | "voice_auto_assignment"
+    | "inferred_channel"
+    | null;
 };
 
 type SegmentSpeaker = {
@@ -91,6 +101,7 @@ type SegmentSpeaker = {
   source:
     | "direct_mic_self"
     | "user_assignment"
+    | "voice_auto_assignment"
     | "inferred_channel"
     | "unknown";
 };
@@ -352,6 +363,7 @@ function buildDetailedTranscriptSegments({
         channel: word.channel,
         speaker_index: word.speaker_index,
         human_id: word.human_id,
+        assignment_source: word.assignment_source,
       };
       const last = segments[segments.length - 1];
       const lastWord = last?.words[last.words.length - 1];
@@ -415,8 +427,20 @@ function buildSpeakerAssignments(
   selfHumanId: string | null,
   transcriptJson: TranscriptJson,
 ) {
-  const byChannel = new Map<SegmentChannel, string>();
-  const byChannelSpeaker = new Map<string, string>();
+  const byChannel = new Map<
+    SegmentChannel,
+    {
+      human_id: string;
+      source: "user_assignment" | "voice_auto_assignment" | "inferred_channel";
+    }
+  >();
+  const byChannelSpeaker = new Map<
+    string,
+    {
+      human_id: string;
+      source: "user_assignment" | "voice_auto_assignment" | "inferred_channel";
+    }
+  >();
   const completeChannels = new Set<SegmentChannel>(["direct_mic"]);
   const participantHumanIds = collectSessionParticipantHumanIds(
     store,
@@ -431,8 +455,14 @@ function buildSpeakerAssignments(
     uniqueOtherParticipant &&
     uniqueOtherParticipant.length === 1
   ) {
-    byChannel.set("direct_mic", selfHumanId);
-    byChannel.set("remote_party", uniqueOtherParticipant[0]);
+    byChannel.set("direct_mic", {
+      human_id: selfHumanId,
+      source: "inferred_channel",
+    });
+    byChannel.set("remote_party", {
+      human_id: uniqueOtherParticipant[0],
+      source: "inferred_channel",
+    });
     completeChannels.add("remote_party");
   }
 
@@ -457,7 +487,10 @@ function buildSpeakerAssignments(
     }
 
     for (const hint of transcript.speaker_hints as SpeakerHint[]) {
-      if (hint.type !== "user_speaker_assignment") {
+      if (
+        hint.type !== "user_speaker_assignment" &&
+        hint.type !== "voice_auto_assignment"
+      ) {
         continue;
       }
 
@@ -482,13 +515,22 @@ function buildSpeakerAssignments(
         numberOrNull(providerSpeaker?.speaker_index);
 
       if (speakerIndex == null) {
-        byChannel.set(channel, value.human_id);
+        byChannel.set(channel, {
+          human_id: value.human_id,
+          source:
+            hint.type === "voice_auto_assignment"
+              ? "voice_auto_assignment"
+              : "user_assignment",
+        });
         completeChannels.add(channel);
       } else {
-        byChannelSpeaker.set(
-          segmentSpeakerKey(channel, speakerIndex),
-          value.human_id,
-        );
+        byChannelSpeaker.set(segmentSpeakerKey(channel, speakerIndex), {
+          human_id: value.human_id,
+          source:
+            hint.type === "voice_auto_assignment"
+              ? "voice_auto_assignment"
+              : "user_assignment",
+        });
       }
     }
   }
@@ -539,6 +581,7 @@ function buildSegmentWords(
           channel,
           speaker_index: null,
           human_id: null,
+          assignment_source: null,
         },
       ];
     },
@@ -572,17 +615,20 @@ function buildSegmentWords(
   }
 
   for (const word of words) {
-    const scopedHumanId =
+    const scopedAssignment =
       word.speaker_index == null
         ? null
         : speakerAssignments.byChannelSpeaker.get(
             segmentSpeakerKey(word.channel, word.speaker_index),
           );
-    word.human_id =
-      scopedHumanId ??
-      (speakerAssignments.completeChannels.has(word.channel)
-        ? (speakerAssignments.byChannel.get(word.channel) ?? null)
-        : null);
+    const channelAssignment = speakerAssignments.completeChannels.has(
+      word.channel,
+    )
+      ? speakerAssignments.byChannel.get(word.channel)
+      : null;
+    const assignment = scopedAssignment ?? channelAssignment ?? null;
+    word.human_id = assignment?.human_id ?? null;
+    word.assignment_source = assignment?.source ?? null;
   }
 
   return words.sort((a, b) => {
@@ -635,7 +681,8 @@ function buildSegmentSpeaker({
       email: stringOrNull(human?.email),
       name: stringOrNull(human?.name),
       source:
-        key.speaker_index == null ? "inferred_channel" : "user_assignment",
+        key.assignment_source ??
+        (key.speaker_index == null ? "inferred_channel" : "user_assignment"),
     };
   }
 
@@ -719,7 +766,8 @@ function sameSegmentKey(a: SegmentKey, b: SegmentKey) {
   return (
     a.channel === b.channel &&
     a.speaker_index === b.speaker_index &&
-    a.human_id === b.human_id
+    a.human_id === b.human_id &&
+    a.assignment_source === b.assignment_source
   );
 }
 
@@ -728,7 +776,7 @@ function segmentSpeakerKey(channel: SegmentChannel, speakerIndex: number) {
 }
 
 function serializeSegmentKey(key: SegmentKey) {
-  return `${key.channel}:${key.speaker_index ?? "null"}:${key.human_id ?? "null"}`;
+  return `${key.channel}:${key.speaker_index ?? "null"}:${key.human_id ?? "null"}:${key.assignment_source ?? "null"}`;
 }
 
 function normalizeRenderedWordText(text: string, isFirstWord: boolean) {

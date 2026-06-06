@@ -20,6 +20,7 @@ import { isStoppedTranscriptionError, useRunBatch } from "./useRunBatch";
 
 import { getEnhancerService } from "~/services/enhancer";
 import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
+import { getSpeakerIdentificationService } from "~/services/speaker-identification";
 import * as main from "~/store/tinybase/store/main";
 import { type Tab, useTabs } from "~/store/zustand/tabs";
 
@@ -227,6 +228,18 @@ export function useUploadFile(sessionId: string) {
         Effect.flatMap((importedPath) =>
           Effect.tryPromise({
             try: () => runBatch(importedPath),
+            catch: (error) => error,
+          }),
+        ),
+        Effect.flatMap(() =>
+          Effect.tryPromise({
+            try: async () => {
+              const audioPath = await fsSyncCommands.audioPath(sessionId);
+              await getSpeakerIdentificationService()?.matchAndApplyBeforeEnhance(
+                sessionId,
+                audioPath.status === "ok" ? audioPath.data : null,
+              );
+            },
             catch: (error) => error,
           }),
         ),

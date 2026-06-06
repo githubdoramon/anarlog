@@ -198,7 +198,8 @@ function normalizeSpeakerHint(
   }
 
   if (
-    hint.type === "user_speaker_assignment" &&
+    (hint.type === "user_speaker_assignment" ||
+      hint.type === "voice_auto_assignment") &&
     typeof (value as { human_id?: unknown }).human_id === "string"
   ) {
     const assignment = value as {

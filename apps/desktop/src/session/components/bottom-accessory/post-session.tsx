@@ -19,6 +19,7 @@ import { cn } from "@hypr/utils";
 
 import * as AudioPlayer from "~/audio-player";
 import { getEnhancerService } from "~/services/enhancer";
+import { getSpeakerIdentificationService } from "~/services/speaker-identification";
 import { Transcript } from "~/session/components/note-input/transcript";
 import { useTranscriptScreen } from "~/session/components/note-input/transcript/state";
 import { useListener } from "~/stt/contexts";
@@ -155,6 +156,10 @@ function useRegenerateTranscript(sessionId: string) {
 
     try {
       await runBatch(audioPath);
+      await getSpeakerIdentificationService()?.matchAndApplyBeforeEnhance(
+        sessionId,
+        audioPath,
+      );
       getEnhancerService()?.queueAutoEnhanceIfSummaryEmpty(sessionId);
     } catch (error) {
       if (isStoppedTranscriptionError(error)) {

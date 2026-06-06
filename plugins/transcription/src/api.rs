@@ -168,6 +168,36 @@ pub struct TranscriptionOutput {
     pub response: owhisper_interface::batch::Response,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct VoiceEmbeddingWindow {
+    pub id: String,
+    pub speaker_id: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub channel: i32,
+    #[serde(default)]
+    pub speaker_index: Option<i32>,
+    #[serde(default)]
+    pub word_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct VoiceEmbeddingObservation {
+    pub id: String,
+    pub speaker_id: String,
+    pub embedding: Vec<f32>,
+    pub embedding_model: String,
+    pub embedding_dim: u32,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub duration_ms: i64,
+    pub channel: i32,
+    #[serde(default)]
+    pub speaker_index: Option<i32>,
+    #[serde(default)]
+    pub word_count: Option<u32>,
+}
+
 #[derive(serde::Serialize, Clone, specta::Type, tauri_specta::Event)]
 #[serde(tag = "type")]
 pub enum TranscriptionEvent {

@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the export_to_vtt command without any pre-configured scope."
         },
         {
+          "description": "Enables the extract_voice_embeddings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-extract-voice-embeddings",
+          "markdownDescription": "Enables the extract_voice_embeddings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the extract_voice_embeddings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-extract-voice-embeddings",
+          "markdownDescription": "Denies the extract_voice_embeddings command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_capture_state command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-capture-state",
@@ -523,10 +535,10 @@
           "markdownDescription": "Denies the suggest_providers_for_languages_live command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for transcription commands.\n#### This default permission set includes:\n\n- `allow-export-to-vtt`\n- `allow-get-capture-state`\n- `allow-get-current-microphone-device`\n- `allow-get-mic-muted`\n- `allow-is-supported-languages-batch`\n- `allow-is-supported-languages-live`\n- `allow-list-documented-language-codes-batch`\n- `allow-list-documented-language-codes-live`\n- `allow-list-microphone-devices`\n- `allow-parse-subtitle`\n- `allow-render-transcript-segments`\n- `allow-run-denoise`\n- `allow-set-mic-muted`\n- `allow-start-capture`\n- `allow-start-transcription`\n- `allow-stop-capture`\n- `allow-stop-transcription`\n- `allow-suggest-providers-for-languages-batch`\n- `allow-suggest-providers-for-languages-live`",
+          "description": "Default permissions for transcription commands.\n#### This default permission set includes:\n\n- `allow-export-to-vtt`\n- `allow-extract-voice-embeddings`\n- `allow-get-capture-state`\n- `allow-get-current-microphone-device`\n- `allow-get-mic-muted`\n- `allow-is-supported-languages-batch`\n- `allow-is-supported-languages-live`\n- `allow-list-documented-language-codes-batch`\n- `allow-list-documented-language-codes-live`\n- `allow-list-microphone-devices`\n- `allow-parse-subtitle`\n- `allow-render-transcript-segments`\n- `allow-run-denoise`\n- `allow-set-mic-muted`\n- `allow-start-capture`\n- `allow-start-transcription`\n- `allow-stop-capture`\n- `allow-stop-transcription`\n- `allow-suggest-providers-for-languages-batch`\n- `allow-suggest-providers-for-languages-live`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for transcription commands.\n#### This default permission set includes:\n\n- `allow-export-to-vtt`\n- `allow-get-capture-state`\n- `allow-get-current-microphone-device`\n- `allow-get-mic-muted`\n- `allow-is-supported-languages-batch`\n- `allow-is-supported-languages-live`\n- `allow-list-documented-language-codes-batch`\n- `allow-list-documented-language-codes-live`\n- `allow-list-microphone-devices`\n- `allow-parse-subtitle`\n- `allow-render-transcript-segments`\n- `allow-run-denoise`\n- `allow-set-mic-muted`\n- `allow-start-capture`\n- `allow-start-transcription`\n- `allow-stop-capture`\n- `allow-stop-transcription`\n- `allow-suggest-providers-for-languages-batch`\n- `allow-suggest-providers-for-languages-live`"
+          "markdownDescription": "Default permissions for transcription commands.\n#### This default permission set includes:\n\n- `allow-export-to-vtt`\n- `allow-extract-voice-embeddings`\n- `allow-get-capture-state`\n- `allow-get-current-microphone-device`\n- `allow-get-mic-muted`\n- `allow-is-supported-languages-batch`\n- `allow-is-supported-languages-live`\n- `allow-list-documented-language-codes-batch`\n- `allow-list-documented-language-codes-live`\n- `allow-list-microphone-devices`\n- `allow-parse-subtitle`\n- `allow-render-transcript-segments`\n- `allow-run-denoise`\n- `allow-set-mic-muted`\n- `allow-start-capture`\n- `allow-start-transcription`\n- `allow-stop-capture`\n- `allow-stop-transcription`\n- `allow-suggest-providers-for-languages-batch`\n- `allow-suggest-providers-for-languages-live`"
         }
       ]
     }

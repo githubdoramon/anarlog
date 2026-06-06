@@ -26,6 +26,7 @@ export type DigitalBrainSpeakerIdentity = {
   source:
     | "direct_mic_self"
     | "user_assignment"
+    | "voice_auto_assignment"
     | "inferred_channel"
     | "unknown";
 };

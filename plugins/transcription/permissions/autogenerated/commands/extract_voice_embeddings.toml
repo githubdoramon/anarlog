@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-extract-voice-embeddings"
+description = "Enables the extract_voice_embeddings command without any pre-configured scope."
+commands.allow = ["extract_voice_embeddings"]
+
+[[permission]]
+identifier = "deny-extract-voice-embeddings"
+description = "Denies the extract_voice_embeddings command without any pre-configured scope."
+commands.deny = ["extract_voice_embeddings"]
