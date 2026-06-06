@@ -14,6 +14,8 @@ import {
 } from "./useRunBatch";
 import { useSTTConnection } from "./useSTTConnection";
 
+import { useAuth } from "~/auth";
+import { enrichSessionParticipantsFromDigitalBrain } from "~/services/digital-brain/participants";
 import { getEnhancerService } from "~/services/enhancer";
 import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
 import { getSessionEventById } from "~/session/utils";
@@ -140,6 +142,7 @@ export function getPostCaptureAction(
 }
 
 export function useStartListening(sessionId: string) {
+  const auth = useAuth();
   const { user_id } = main.UI.useValues(main.STORE_ID);
   const store = main.UI.useStore(main.STORE_ID);
   const indexes = main.UI.useIndexes(main.STORE_ID);
@@ -274,6 +277,13 @@ export function useStartListening(sessionId: string) {
       });
     };
 
+    await enrichSessionParticipantsFromDigitalBrain({
+      store,
+      sessionId,
+      authHeaders: auth.getHeaders(),
+      currentUserEmail: auth.session?.user.email,
+    });
+
     const participantHumanIds = collectSessionParticipantHumanIds(
       store,
       sessionId,
@@ -333,6 +343,7 @@ export function useStartListening(sessionId: string) {
     keywords,
     user_id,
     spokenLanguages,
+    auth,
   ]);
 
   return startListening;

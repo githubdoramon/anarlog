@@ -19,6 +19,8 @@ const {
   audioSourceMetadataMock,
   createAppendBatchPersistMock,
   appendPersistMock,
+  enrichSessionParticipantsFromDigitalBrainMock,
+  useAuthMock,
 } = vi.hoisted(() => ({
   queueAutoEnhanceIfSummaryEmptyMock: vi.fn(),
   startMock: vi.fn(),
@@ -34,6 +36,8 @@ const {
   audioSourceMetadataMock: vi.fn(),
   createAppendBatchPersistMock: vi.fn(),
   appendPersistMock: vi.fn(),
+  enrichSessionParticipantsFromDigitalBrainMock: vi.fn(),
+  useAuthMock: vi.fn(),
 }));
 
 vi.mock("@hypr/plugin-fs-sync", () => ({
@@ -77,6 +81,15 @@ vi.mock("~/services/enhancer", () => ({
   getEnhancerService: vi.fn(() => ({
     queueAutoEnhanceIfSummaryEmpty: queueAutoEnhanceIfSummaryEmptyMock,
   })),
+}));
+
+vi.mock("~/services/digital-brain/participants", () => ({
+  enrichSessionParticipantsFromDigitalBrain:
+    enrichSessionParticipantsFromDigitalBrainMock,
+}));
+
+vi.mock("~/auth", () => ({
+  useAuth: useAuthMock,
 }));
 
 vi.mock("~/session/utils", () => ({
@@ -175,6 +188,11 @@ describe("useStartListening", () => {
         apiKey: "",
       },
     });
+    useAuthMock.mockReturnValue({
+      getHeaders: vi.fn(() => ({ Authorization: "Bearer token" })),
+      session: { user: { email: "me@example.com" } },
+    });
+    enrichSessionParticipantsFromDigitalBrainMock.mockResolvedValue(undefined);
     useStoreMock.mockReturnValue({
       getCell: vi.fn(() => ""),
       getValue: vi.fn(() => "user-1"),
@@ -229,6 +247,34 @@ describe("useStartListening", () => {
     expect(queueAutoEnhanceIfSummaryEmptyMock).toHaveBeenCalledWith(
       "session-1",
     );
+  });
+
+  test("enriches participants before starting listener", async () => {
+    const store = {
+      getCell: vi.fn(() => ""),
+      getValue: vi.fn(() => "user-1"),
+      forEachRow: vi.fn(),
+      setRow: vi.fn(),
+      delRow: vi.fn(),
+      transaction: vi.fn((fn: () => void) => fn()),
+    };
+    useStoreMock.mockReturnValue(store);
+
+    const { result } = renderHook(() => useStartListening("session-1"));
+
+    await act(async () => {
+      await result.current();
+    });
+
+    expect(enrichSessionParticipantsFromDigitalBrainMock).toHaveBeenCalledWith({
+      store,
+      sessionId: "session-1",
+      authHeaders: { Authorization: "Bearer token" },
+      currentUserEmail: "me@example.com",
+    });
+    expect(
+      enrichSessionParticipantsFromDigitalBrainMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(startMock.mock.invocationCallOrder[0]);
   });
 
   test("batch appends resumed capture after existing transcript audio", async () => {
