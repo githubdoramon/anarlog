@@ -157,6 +157,14 @@ async listDocumentedLanguageCodesBatch() : Promise<Result<string[], string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async extractVoiceEmbeddings(audioPath: string, windows: VoiceEmbeddingWindow[]) : Promise<Result<VoiceEmbeddingObservation[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("plugin:transcription|extract_voice_embeddings", { audioPath, windows }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -229,6 +237,8 @@ export type TranscriptionEvent = { type: "started"; session_id: string } | { typ
 export type TranscriptionMode = "live" | "batch"
 export type TranscriptionParams = { session_id: string; provider: BatchProvider; file_path: string; model?: string | null; base_url: string; api_key: string; languages?: string[]; keywords?: string[]; num_speakers?: number | null; min_speakers?: number | null; max_speakers?: number | null }
 export type VttWord = { text: string; start_ms: number; end_ms: number; speaker: string | null }
+export type VoiceEmbeddingObservation = { id: string; speaker_id: string; embedding: number[]; embedding_model: string; embedding_dim: number; start_ms: number; end_ms: number; duration_ms: number; channel: number; speaker_index?: number | null; word_count?: number | null }
+export type VoiceEmbeddingWindow = { id: string; speaker_id: string; start_ms: number; end_ms: number; channel: number; speaker_index?: number | null; word_count?: number | null }
 /**
  * Whether a finalized word is stable or awaiting correction.
  * 

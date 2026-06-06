@@ -9,6 +9,7 @@ import { useRegisterTools } from "~/contexts/tool";
 import { useSearchEngine } from "~/search/contexts/engine";
 import { initEnhancerService } from "~/services/enhancer";
 import { initMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
+import { initSpeakerIdentificationService } from "~/services/speaker-identification";
 import { getSessionEvent } from "~/session/utils";
 import { useDesktopTabLifecycle } from "~/shared/desktop-tab-lifecycle";
 import * as main from "~/store/tinybase/store/main";
@@ -38,6 +39,7 @@ export function ClassicMainServices() {
       <ToolRegistration />
       <EnhancerInit />
       <MeetingTranscriptUploadInit />
+      <SpeakerIdentificationInit />
     </>
   );
 }
@@ -65,6 +67,27 @@ function MeetingTranscriptUploadInit() {
         console.info("[meeting-transcript-upload]", "auth_headers_missing");
         return null;
       },
+      getCurrentUserEmail: () => authRef.current.session?.user.email,
+    });
+
+    return () => service.dispose();
+  }, [store]);
+
+  return null;
+}
+
+function SpeakerIdentificationInit() {
+  const auth = useAuth();
+  const store = main.UI.useStore(main.STORE_ID);
+  const authRef = useRef(auth);
+  authRef.current = auth;
+
+  useEffect(() => {
+    if (!store) return;
+
+    const service = initSpeakerIdentificationService({
+      store,
+      getAuthHeaders: () => authRef.current.getHeaders(),
       getCurrentUserEmail: () => authRef.current.session?.user.email,
     });
 

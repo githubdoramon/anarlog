@@ -16,6 +16,7 @@ specta-typescript = { workspace = true }
 [dependencies]
 hypr-audio = { workspace = true }
 hypr-audio-utils = { workspace = true }
+hypr-embedding = { workspace = true }
 hypr-language = { workspace = true }
 hypr-storage = { workspace = true }
 hypr-transcribe-soniqo = { workspace = true }

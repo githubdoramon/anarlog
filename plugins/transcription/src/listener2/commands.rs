@@ -1,9 +1,12 @@
 use std::str::FromStr;
 
+use hypr_audio_utils::Source;
+use hypr_embedding::{EMBEDDING_DIM, EmbeddingExtractor};
 use hypr_transcription_core::listener2 as core;
+use hypr_transcription_core::{TARGET_SAMPLE_RATE, split_resampled_channels};
 
-use crate::TranscriptionParams;
 use crate::listener2::Listener2PluginExt;
+use crate::{TranscriptionParams, VoiceEmbeddingObservation, VoiceEmbeddingWindow};
 
 #[tauri::command]
 #[specta::specta]
@@ -98,4 +101,81 @@ pub async fn list_documented_language_codes_batch<R: tauri::Runtime>(
     _app: tauri::AppHandle<R>,
 ) -> Result<Vec<String>, String> {
     Ok(core::list_documented_language_codes_batch())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extract_voice_embeddings<R: tauri::Runtime>(
+    _app: tauri::AppHandle<R>,
+    audio_path: String,
+    windows: Vec<VoiceEmbeddingWindow>,
+) -> Result<Vec<VoiceEmbeddingObservation>, String> {
+    tokio::task::spawn_blocking(move || extract_voice_embeddings_sync(&audio_path, &windows))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn extract_voice_embeddings_sync(
+    audio_path: &str,
+    windows: &[VoiceEmbeddingWindow],
+) -> Result<Vec<VoiceEmbeddingObservation>, String> {
+    if windows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let source = hypr_audio_utils::source_from_path(audio_path).map_err(|e| e.to_string())?;
+    let channel_count = u16::from(source.channels()).max(1) as usize;
+    let resampled =
+        hypr_audio_utils::resample_audio(source, TARGET_SAMPLE_RATE).map_err(|e| e.to_string())?;
+    let channel_samples = split_resampled_channels(&resampled, channel_count);
+    if channel_samples.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut extractor = EmbeddingExtractor::new().map_err(|e| e.to_string())?;
+    let mut observations = Vec::new();
+
+    for window in windows {
+        let channel_idx = if window.channel >= 0 {
+            (window.channel as usize).min(channel_samples.len().saturating_sub(1))
+        } else {
+            0
+        };
+        let Some(samples) = channel_samples.get(channel_idx) else {
+            continue;
+        };
+
+        let start = ms_to_sample(window.start_ms, samples.len());
+        let end = ms_to_sample(window.end_ms, samples.len());
+        if end <= start {
+            continue;
+        }
+
+        let Some(embedding) = extractor
+            .compute_optional(&samples[start..end])
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+
+        observations.push(VoiceEmbeddingObservation {
+            id: window.id.clone(),
+            speaker_id: window.speaker_id.clone(),
+            embedding,
+            embedding_model: "pyannote_wespeaker_onnx".to_string(),
+            embedding_dim: EMBEDDING_DIM as u32,
+            start_ms: window.start_ms,
+            end_ms: window.end_ms,
+            duration_ms: window.end_ms.saturating_sub(window.start_ms),
+            channel: window.channel,
+            speaker_index: window.speaker_index,
+            word_count: window.word_count,
+        });
+    }
+
+    Ok(observations)
+}
+
+fn ms_to_sample(ms: i64, sample_count: usize) -> usize {
+    ((ms.max(0) as f64 / 1000.0 * TARGET_SAMPLE_RATE as f64).round() as usize).min(sample_count)
 }

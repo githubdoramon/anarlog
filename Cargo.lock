@@ -19054,6 +19054,7 @@ version = "0.1.0"
 dependencies = [
  "audio",
  "audio-utils",
+ "embedding",
  "hound",
  "language",
  "owhisper-client",
