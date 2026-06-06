@@ -5,7 +5,7 @@ use owhisper_interface::{ListenParams, batch};
 
 use super::BatchRunOutput;
 
-const MIN_DIARIZATION_TURN_SECONDS: f64 = 0.8;
+const MIN_DIARIZATION_TURN_SECONDS: f64 = 0.25;
 const MIN_AUTO_SPEAKER_SECONDS: f64 = 3.0;
 const MAX_AUTO_SPEAKERS: usize = 2;
 const SPEAKER_SIMILARITY_THRESHOLD: f32 = 0.70;
@@ -277,15 +277,64 @@ fn cluster_embeddings(
     }
 
     let threshold = speaker_similarity_threshold();
-    let mut centroids = vec![normalize(&embeddings[0])];
-    for (idx, embedding) in embeddings.iter().enumerate().skip(1) {
-        let normalized = normalize(embedding);
-        let best_similarity = centroids
-            .iter()
-            .map(|centroid| cosine_similarity(&normalized, centroid))
-            .fold(f32::NEG_INFINITY, f32::max);
-        let creates_speaker = centroids.len() < target_speakers
-            && (force_speaker_count || best_similarity < threshold);
+    let normalized_embeddings = embeddings
+        .iter()
+        .map(|embedding| normalize(embedding))
+        .collect::<Vec<_>>();
+    let mut centroids = initialize_centroids(
+        &normalized_embeddings,
+        target_speakers,
+        force_speaker_count,
+        threshold,
+        channel_idx,
+    );
+
+    if centroids.len() == 1 {
+        return vec![0; embeddings.len()];
+    }
+
+    let mut assignments = vec![0; embeddings.len()];
+    for _ in 0..8 {
+        let mut changed = false;
+        for (idx, embedding) in normalized_embeddings.iter().enumerate() {
+            let speaker = nearest_centroid(embedding, &centroids);
+            changed |= assignments[idx] != speaker;
+            assignments[idx] = speaker;
+        }
+
+        centroids = recompute_centroids(&normalized_embeddings, &assignments, centroids.len());
+        if !changed {
+            break;
+        }
+    }
+
+    assignments
+}
+
+fn initialize_centroids(
+    normalized_embeddings: &[Vec<f32>],
+    target_speakers: usize,
+    force_speaker_count: bool,
+    threshold: f32,
+    channel_idx: usize,
+) -> Vec<Vec<f32>> {
+    let mut centroids = Vec::new();
+
+    if force_speaker_count && target_speakers > 1 && normalized_embeddings.len() > 1 {
+        let (left, right) = farthest_pair(normalized_embeddings);
+        centroids.push(normalized_embeddings[left].clone());
+        centroids.push(normalized_embeddings[right].clone());
+    } else if let Some(first) = normalized_embeddings.first() {
+        centroids.push(first.clone());
+    }
+
+    while centroids.len() < target_speakers && centroids.len() < normalized_embeddings.len() {
+        let Some((idx, best_similarity)) =
+            farthest_from_centroids(normalized_embeddings, &centroids)
+        else {
+            break;
+        };
+        let creates_speaker = force_speaker_count || best_similarity < threshold;
         debug_centroid_decision(
             channel_idx,
             idx,
@@ -297,32 +346,50 @@ fn cluster_embeddings(
             force_speaker_count,
         );
 
-        if creates_speaker {
-            centroids.push(normalized);
-        }
-    }
-
-    if centroids.len() == 1 {
-        return vec![0; embeddings.len()];
-    }
-
-    let mut assignments = vec![0; embeddings.len()];
-    for _ in 0..8 {
-        let mut changed = false;
-        for (idx, embedding) in embeddings.iter().enumerate() {
-            let normalized = normalize(embedding);
-            let speaker = nearest_centroid(&normalized, &centroids);
-            changed |= assignments[idx] != speaker;
-            assignments[idx] = speaker;
-        }
-
-        centroids = recompute_centroids(embeddings, &assignments, centroids.len());
-        if !changed {
+        if !creates_speaker {
             break;
         }
+
+        centroids.push(normalized_embeddings[idx].clone());
     }
 
-    assignments
+    centroids
+}
+
+fn farthest_pair(embeddings: &[Vec<f32>]) -> (usize, usize) {
+    let mut best = (0usize, 1usize);
+    let mut best_similarity = f32::INFINITY;
+
+    for left in 0..embeddings.len() {
+        for right in left + 1..embeddings.len() {
+            let similarity = cosine_similarity(&embeddings[left], &embeddings[right]);
+            if similarity < best_similarity {
+                best = (left, right);
+                best_similarity = similarity;
+            }
+        }
+    }
+
+    best
+}
+
+fn farthest_from_centroids(
+    embeddings: &[Vec<f32>],
+    centroids: &[Vec<f32>],
+) -> Option<(usize, f32)> {
+    embeddings
+        .iter()
+        .enumerate()
+        .map(|(idx, embedding)| {
+            let best_similarity = centroids
+                .iter()
+                .map(|centroid| cosine_similarity(embedding, centroid))
+                .fold(f32::NEG_INFINITY, f32::max);
+            (idx, best_similarity)
+        })
+        .min_by(|(_, left), (_, right)| {
+            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+        })
 }
 
 fn merge_short_lived_speakers(turns: &[WordTurn], assignments: Vec<usize>) -> Vec<usize> {
@@ -551,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn word_turns_split_on_pause_and_drop_short_turns() {
+    fn word_turns_split_on_pause_and_keep_short_utterances() {
         let turns = word_turns(&[
             word(0.0, 0.5),
             word(0.55, 1.2),
@@ -559,9 +626,10 @@ mod tests {
             word(3.5, 4.5),
         ]);
 
-        assert_eq!(turns.len(), 2);
+        assert_eq!(turns.len(), 3);
         assert_eq!(turns[0].word_range, 0..2);
-        assert_eq!(turns[1].word_range, 3..4);
+        assert_eq!(turns[1].word_range, 2..3);
+        assert_eq!(turns[2].word_range, 3..4);
     }
 
     #[test]
@@ -593,6 +661,25 @@ mod tests {
             ],
             2,
             false,
+            0,
+        );
+
+        assert_eq!(assignments[0], assignments[1]);
+        assert_eq!(assignments[2], assignments[3]);
+        assert_ne!(assignments[0], assignments[2]);
+    }
+
+    #[test]
+    fn forced_cluster_uses_global_farthest_pair() {
+        let assignments = cluster_embeddings(
+            &[
+                vec![1.0, 0.0],
+                vec![0.98, 0.02],
+                vec![0.0, 1.0],
+                vec![0.03, 0.97],
+            ],
+            2,
+            true,
             0,
         );
 

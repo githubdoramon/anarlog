@@ -39,9 +39,32 @@ export function useDeeplinkHandler() {
 
     const unlisten = deeplink2Events.deepLinkEvent.listen(({ payload }) => {
       if (payload.to === "/auth/callback") {
-        const { access_token, refresh_token } = payload.search;
+        const { access_token, refresh_token, code, error } = payload.search;
+        if (error) {
+          sonnerToast.error(`Sign-in failed: ${error}`);
+          return;
+        }
+
         if (access_token && refresh_token && auth) {
-          void auth.setSessionFromTokens(access_token, refresh_token);
+          void auth
+            .setSessionFromTokens(access_token, refresh_token)
+            .then(() => dismissInstruction());
+        } else if (code && auth) {
+          void auth
+            .handleAuthCallback(
+              `${window.location.origin}/auth/callback?${new URLSearchParams(
+                Object.entries(payload.search).flatMap(([key, value]) =>
+                  value ? [[key, value]] : [],
+                ),
+              ).toString()}`,
+            )
+            .then(() => dismissInstruction())
+            .catch((e) => {
+              console.error("[deeplink] auth callback failed", e);
+              sonnerToast.error(
+                e instanceof Error ? e.message : "Failed to complete sign-in",
+              );
+            });
         }
       } else if (payload.to === "/billing/refresh") {
         if (auth) {

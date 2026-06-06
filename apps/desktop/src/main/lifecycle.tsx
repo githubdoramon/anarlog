@@ -53,7 +53,18 @@ function MeetingTranscriptUploadInit() {
 
     const service = initMeetingTranscriptUploadService({
       store,
-      getAuthHeaders: () => authRef.current.getHeaders(),
+      getAuthHeaders: async () => {
+        const session = await authRef.current.refreshSession();
+        if (session) {
+          console.info("[meeting-transcript-upload]", "auth_headers_app");
+          return {
+            Authorization: `Bearer ${session.access_token}`,
+          };
+        }
+
+        console.info("[meeting-transcript-upload]", "auth_headers_missing");
+        return null;
+      },
       getCurrentUserEmail: () => authRef.current.session?.user.email,
     });
 

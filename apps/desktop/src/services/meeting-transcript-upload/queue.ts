@@ -1,3 +1,5 @@
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+
 import { and, eq, lte, meetingTranscriptUploadQueue, or } from "@hypr/db";
 
 import {
@@ -16,16 +18,21 @@ const RETRYABLE_STATUS_CODES = new Set([408, 429]);
 const PERMANENT_STATUS_CODES = new Set([400, 403, 404, 422]);
 const MAX_BACKOFF_MS = 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 30 * 1000;
+const LOG_PREFIX = "[meeting-transcript-upload]";
 
 type QueueInput = {
   store: DigitalBrainPayloadStore;
   sessionId: string;
   currentUserEmail?: string | null;
+  force?: boolean;
 };
 
 type WorkerDeps = {
   store: DigitalBrainPayloadStore;
-  getAuthHeaders: () => { Authorization: string } | null;
+  getAuthHeaders: () =>
+    | Record<string, string>
+    | null
+    | Promise<Record<string, string> | null>;
   getCurrentUserEmail: () => string | null | undefined;
 };
 
@@ -39,6 +46,7 @@ export async function enqueueMeetingTranscriptUpload({
   store,
   sessionId,
   currentUserEmail,
+  force = false,
 }: QueueInput): Promise<DigitalBrainTranscriptionPayload | null> {
   const payload = buildDigitalBrainTranscriptionPayload({
     store,
@@ -46,6 +54,7 @@ export async function enqueueMeetingTranscriptUpload({
     currentUserEmail,
   });
   if (!payload) {
+    log("enqueue_skipped_no_payload", { sessionId, force });
     return null;
   }
 
@@ -53,6 +62,24 @@ export async function enqueueMeetingTranscriptUpload({
   const status: DigitalBrainUploadStatus = getServerUrl()
     ? "pending"
     : "config_missing";
+
+  if (force) {
+    log("enqueue_force_delete_existing", {
+      sessionId,
+      transcriptHash: payload.transcript_hash,
+    });
+    await db
+      .delete(meetingTranscriptUploadQueue)
+      .where(
+        and(
+          eq(meetingTranscriptUploadQueue.sessionId, sessionId),
+          eq(
+            meetingTranscriptUploadQueue.transcriptHash,
+            payload.transcript_hash,
+          ),
+        ),
+      );
+  }
 
   await db
     .insert(meetingTranscriptUploadQueue)
@@ -77,6 +104,16 @@ export async function enqueueMeetingTranscriptUpload({
       ],
     });
 
+  log("enqueue_complete", {
+    sessionId,
+    uploadId: payload.upload_id,
+    transcriptHash: payload.transcript_hash,
+    status,
+    force,
+    segmentCount: payload.transcript.segments.length,
+    speakerCount: payload.speaker_identities.length,
+  });
+
   return payload;
 }
 
@@ -95,6 +132,7 @@ export class MeetingTranscriptUploadService {
   constructor(private deps: WorkerDeps) {}
 
   start() {
+    log("service_start");
     this.timer = setInterval(() => {
       void this.processNext();
     }, 10_000);
@@ -102,6 +140,7 @@ export class MeetingTranscriptUploadService {
   }
 
   dispose() {
+    log("service_dispose");
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -119,8 +158,29 @@ export class MeetingTranscriptUploadService {
     });
   }
 
+  async forceUploadSession(sessionId: string) {
+    log("force_upload_requested", { sessionId });
+    const payload = await enqueueMeetingTranscriptUpload({
+      store: this.deps.store,
+      sessionId,
+      currentUserEmail: this.deps.getCurrentUserEmail(),
+      force: true,
+    });
+
+    if (payload) {
+      log("force_upload_processing_now", {
+        sessionId,
+        uploadId: payload.upload_id,
+      });
+      await this.processNext();
+    }
+
+    return payload;
+  }
+
   async processNext() {
     if (this.running) {
+      log("process_skip_already_running");
       return;
     }
 
@@ -135,6 +195,7 @@ export class MeetingTranscriptUploadService {
   private async processDueRow() {
     const serverUrl = getServerUrl();
     if (!serverUrl) {
+      log("process_skip_missing_server_url");
       return;
     }
 
@@ -159,11 +220,24 @@ export class MeetingTranscriptUploadService {
 
     const row = rows[0];
     if (!row) {
+      log("process_skip_no_due_rows");
       return;
     }
 
-    const headers = this.deps.getAuthHeaders();
+    log("process_row_start", {
+      id: row.id,
+      sessionId: row.sessionId,
+      status: row.status,
+      attemptCount: row.attemptCount,
+      nextAttemptAt: row.nextAttemptAt,
+    });
+
+    const headers = await this.deps.getAuthHeaders();
     if (!headers) {
+      log("process_row_missing_auth", {
+        id: row.id,
+        sessionId: row.sessionId,
+      });
       await markRow(row.id, {
         status: "auth_required",
         lastError: "Authentication is required.",
@@ -176,6 +250,10 @@ export class MeetingTranscriptUploadService {
     try {
       payload = JSON.parse(row.payloadJson) as DigitalBrainTranscriptionPayload;
     } catch {
+      log("process_row_invalid_payload_json", {
+        id: row.id,
+        sessionId: row.sessionId,
+      });
       await markRow(row.id, {
         status: "failed",
         lastError: "Queued payload JSON is invalid.",
@@ -184,22 +262,60 @@ export class MeetingTranscriptUploadService {
     }
 
     try {
+      log("post_start", {
+        id: row.id,
+        sessionId: row.sessionId,
+        endpoint: postEndpoint(serverUrl),
+        authProvider: headers["X-Auth-Provider"] ?? "app",
+        segmentCount: payload.transcript.segments.length,
+        speakerCount: payload.speaker_identities.length,
+      });
       const response = await postPayload(serverUrl, headers, payload);
+      log("post_response", {
+        id: row.id,
+        sessionId: row.sessionId,
+        status: response.status,
+        ok: response.ok,
+      });
       if (response.ok) {
         const body = (await response.json().catch(() => null)) as {
+          id?: unknown;
+          ok?: unknown;
           server_id?: unknown;
         } | null;
+        if (!body) {
+          throw new Error("Server returned a successful non-JSON response.");
+        }
+
+        const serverId =
+          typeof body.server_id === "string"
+            ? body.server_id
+            : typeof body.id === "string"
+              ? body.id
+              : "";
+
         await markRow(row.id, {
           status: "sent",
-          serverId: typeof body?.server_id === "string" ? body.server_id : "",
+          serverId,
           sentAt: new Date().toISOString(),
           lastError: "",
+        });
+        log("process_row_sent", {
+          id: row.id,
+          sessionId: row.sessionId,
+          serverId,
         });
         return;
       }
 
       const errorText = await response.text().catch(() => "");
       if (response.status === 401) {
+        log("process_row_auth_required", {
+          id: row.id,
+          sessionId: row.sessionId,
+          status: response.status,
+          errorText: truncate(errorText),
+        });
         await markRow(row.id, {
           status: "auth_required",
           lastError: errorText || "Authentication is required.",
@@ -213,6 +329,13 @@ export class MeetingTranscriptUploadService {
         RETRYABLE_STATUS_CODES.has(response.status) ||
         response.status >= 500
       ) {
+        log("process_row_retryable_response", {
+          id: row.id,
+          sessionId: row.sessionId,
+          status: response.status,
+          errorText: truncate(errorText),
+          nextAttemptAt: nextAttemptAt(row.attemptCount + 1),
+        });
         await markRow(row.id, {
           status: "pending",
           lastError: errorText || `Server returned ${response.status}.`,
@@ -230,7 +353,23 @@ export class MeetingTranscriptUploadService {
         attemptCount: row.attemptCount + 1,
         nextAttemptAt: nextAttemptAt(row.attemptCount + 1),
       });
+      log("process_row_response_handled", {
+        id: row.id,
+        sessionId: row.sessionId,
+        status: response.status,
+        finalStatus: PERMANENT_STATUS_CODES.has(response.status)
+          ? "failed"
+          : "pending",
+        errorText: truncate(errorText),
+      });
     } catch (error) {
+      log("post_failed", {
+        id: row.id,
+        sessionId: row.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : undefined,
+        nextAttemptAt: nextAttemptAt(row.attemptCount + 1),
+      });
       await markRow(row.id, {
         status: "pending",
         lastError: error instanceof Error ? error.message : String(error),
@@ -243,24 +382,21 @@ export class MeetingTranscriptUploadService {
 
 async function postPayload(
   serverUrl: string,
-  headers: { Authorization: string },
+  headers: Record<string, string>,
   payload: DigitalBrainTranscriptionPayload,
 ) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(
-      `${serverUrl}/api/orchestrator/ingest/events/transcription`,
-      {
-        method: "POST",
-        headers: {
-          ...headers,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
+    return await tauriFetch(postEndpoint(serverUrl), {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timeout);
   }
@@ -310,4 +446,20 @@ function nextAttemptAt(attemptCount: number) {
 export function getServerUrl() {
   const value = env.VITE_DIGITAL_BRAIN_SERVER_URL?.trim();
   return value ? value.replace(/\/+$/, "") : null;
+}
+
+function postEndpoint(serverUrl: string) {
+  return `${serverUrl}/api/orchestrator/ingest/meetings/transcript`;
+}
+
+function log(event: string, data?: Record<string, unknown>) {
+  if (data) {
+    console.info(LOG_PREFIX, event, data);
+  } else {
+    console.info(LOG_PREFIX, event);
+  }
+}
+
+function truncate(value: string, max = 500) {
+  return value.length > max ? `${value.slice(0, max)}...` : value;
 }

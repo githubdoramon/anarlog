@@ -13,6 +13,7 @@ import {
 
 import { DeleteNote, DeleteRecording } from "./delete";
 import { DownloadDigitalBrainPayload } from "./digital-brain-payload";
+import { UploadDigitalBrainPayload } from "./digital-brain-upload";
 import { ExportModal } from "./export-modal";
 import { Listening } from "./listening";
 import { Copy, ShowInFinder } from "./misc";
@@ -60,6 +61,10 @@ export function OverflowButton({
               <span>Export</span>
             </DropdownMenuItem>
             <DownloadDigitalBrainPayload
+              sessionId={sessionId}
+              hasTranscript={hasTranscript}
+            />
+            <UploadDigitalBrainPayload
               sessionId={sessionId}
               hasTranscript={hasTranscript}
             />

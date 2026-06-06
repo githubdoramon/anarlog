@@ -39,7 +39,7 @@ deepLinkEvent: "plugin:deeplink2:deep-link-event"
 
 /** user-defined types **/
 
-export type AuthCallbackSearch = { access_token: string; refresh_token: string }
+export type AuthCallbackSearch = { access_token: string | null; refresh_token: string | null; code: string | null; state: string | null; scope: string | null; error: string | null }
 export type BillingRefreshSearch = Record<string, never>
 export type DeepLink = { to: "/auth/callback"; search: AuthCallbackSearch } | { to: "/billing/refresh"; search: BillingRefreshSearch } | { to: "/google-calendar/callback"; search: GoogleCalendarCallbackSearch } | { to: "/integration/callback"; search: IntegrationCallbackSearch }
 export type DeepLinkEvent = DeepLink

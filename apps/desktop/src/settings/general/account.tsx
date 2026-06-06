@@ -1,10 +1,44 @@
-import { HardDriveIcon } from "lucide-react";
+import { HardDriveIcon, LogInIcon, LogOutIcon } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@hypr/ui/components/ui/button";
+import { sonnerToast } from "@hypr/ui/components/ui/toast";
 
 import { useAuth } from "~/auth";
 
 export function SettingsAccount() {
   const auth = useAuth();
   const email = auth.session?.user.email;
+  const [isPending, setIsPending] = useState(false);
+
+  const handleSignIn = async () => {
+    setIsPending(true);
+    try {
+      await auth.signIn();
+    } catch (error) {
+      console.error(error);
+      sonnerToast.error(
+        error instanceof Error ? error.message : "Failed to start sign-in",
+      );
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setIsPending(true);
+    try {
+      await auth.signOut();
+      sonnerToast.success("Signed out");
+    } catch (error) {
+      console.error(error);
+      sonnerToast.error(
+        error instanceof Error ? error.message : "Failed to sign out",
+      );
+    } finally {
+      setIsPending(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -14,18 +48,41 @@ export function SettingsAccount() {
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-neutral-900">
-            Local account
+            {email ? "Google account" : "Local account"}
           </h2>
           <p className="mt-1 text-sm text-neutral-600">
-            Anarlog is running in local-first mode. Notes, settings, and local
-            model choices are stored on this device.
+            {email
+              ? "Anarlog is signed in for server integrations. Notes, settings, and local model choices remain stored on this device."
+              : "Sign in with Google to send meeting transcripts to your configured server. Notes, settings, and local model choices remain stored on this device."}
           </p>
           {email ? (
             <p className="mt-3 truncate text-xs text-neutral-500">
-              Cached session: {email}
+              Signed in as {email}
             </p>
           ) : null}
         </div>
+        {email ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleSignOut()}
+            disabled={isPending}
+            className="shrink-0"
+          >
+            <LogOutIcon className="size-4" />
+            Sign out
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            onClick={() => void handleSignIn()}
+            disabled={isPending}
+            className="shrink-0"
+          >
+            <LogInIcon className="size-4" />
+            Sign in with Google
+          </Button>
+        )}
       </div>
     </div>
   );
