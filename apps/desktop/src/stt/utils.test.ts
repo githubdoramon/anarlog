@@ -265,4 +265,46 @@ describe("upsertSpeakerAssignment", () => {
       },
     ]);
   });
+
+  it("stores backend contact id when provided", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "anchor-word",
+          text: " hello",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([]),
+    });
+
+    upsertSpeakerAssignment(
+      store,
+      "transcript-1",
+      remoteSpeakerKey(0),
+      "alice",
+      "anchor-word",
+      { contactId: "contact:alice" },
+    );
+
+    expect(
+      JSON.parse(
+        store.getCell("transcripts", "transcript-1", "speaker_hints") as string,
+      ),
+    ).toEqual([
+      {
+        id: "anchor-word:user_speaker_assignment",
+        word_id: "anchor-word",
+        type: "user_speaker_assignment",
+        value: JSON.stringify({
+          human_id: "alice",
+          contact_id: "contact:alice",
+          channel: 1,
+          speaker_index: 0,
+        }),
+      },
+    ]);
+  });
 });

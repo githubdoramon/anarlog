@@ -118,6 +118,7 @@ export function upsertSpeakerAssignment(
   segmentKey: SegmentKey,
   humanId: string,
   anchorWordId: string,
+  options: { contactId?: string | null } = {},
 ): void {
   const hints = parseTranscriptHints(store, transcriptId);
   const words = parseTranscriptWords(store, transcriptId);
@@ -142,6 +143,7 @@ export function upsertSpeakerAssignment(
     type: "user_speaker_assignment",
     value: JSON.stringify({
       human_id: humanId,
+      contact_id: options.contactId?.trim() || undefined,
       channel,
       speaker_index: nextScope.speakerIndex,
     }),

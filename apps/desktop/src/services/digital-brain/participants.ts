@@ -1,3 +1,5 @@
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+
 import type {
   EventParticipant,
   HumanStorage,
@@ -50,13 +52,37 @@ export async function enrichSessionParticipantsFromDigitalBrain({
 }: EnrichInput): Promise<void> {
   const serverUrl = getServerUrl();
   if (!serverUrl || !authHeaders) {
+    console.info("[digital-brain] participant_enrichment_skipped", {
+      session_id: sessionId,
+      has_server_url: !!serverUrl,
+      server_url: serverUrl,
+      has_auth_headers: !!authHeaders,
+      current_user_email: currentUserEmail ?? null,
+    });
     return;
   }
 
-  const participants = collectSessionParticipantCandidates(store, sessionId);
+  const participants = collectSessionParticipantCandidates(
+    store,
+    sessionId,
+    currentUserEmail,
+  );
   if (participants.length === 0) {
+    console.info("[digital-brain] participant_enrichment_skipped", {
+      session_id: sessionId,
+      reason: "no_participants",
+      current_user_email: currentUserEmail ?? null,
+    });
     return;
   }
+
+  console.info("[digital-brain] participant_enrichment_request", {
+    session_id: sessionId,
+    server_url: serverUrl,
+    path: PARTICIPANTS_RESOLVE_PATH,
+    current_user_email: currentUserEmail ?? null,
+    participant_count: participants.length,
+  });
 
   let participantInfo: DigitalBrainParticipantInfo[];
   try {
@@ -66,9 +92,17 @@ export async function enrichSessionParticipantsFromDigitalBrain({
       participants,
     });
   } catch (error) {
-    console.warn("[digital-brain] failed to enrich participants", error);
+    console.warn(
+      "[digital-brain] failed to enrich participants",
+      serializeError(error),
+    );
     return;
   }
+
+  console.info("[digital-brain] participant_enrichment_response", {
+    session_id: sessionId,
+    participant_count: participantInfo.length,
+  });
 
   applyParticipantInfo(store, sessionId, participantInfo, currentUserEmail);
 }
@@ -76,6 +110,7 @@ export async function enrichSessionParticipantsFromDigitalBrain({
 function collectSessionParticipantCandidates(
   store: ParticipantEnrichmentStore,
   sessionId: string,
+  currentUserEmail?: string | null,
 ) {
   const byEmail = new Map<
     string,
@@ -131,6 +166,8 @@ function collectSessionParticipantCandidates(
     add(human?.name, human?.email);
   });
 
+  add(null, currentUserEmail);
+
   return [...byEmail.values()];
 }
 
@@ -158,7 +195,12 @@ async function fetchParticipantInfo(
 ) {
   const response = await postResolveRequest(serverUrl, authHeaders, payload);
   if (!response.ok) {
-    throw new Error(`server returned ${response.status}`);
+    const errorText = await response.text().catch(() => "");
+    console.warn("[digital-brain] participant_enrichment_http_error", {
+      status: response.status,
+      body: truncateLog(errorText),
+    });
+    throw new Error(`server returned ${response.status}: ${errorText}`);
   }
 
   const body = await response.json().catch(() => null);
@@ -177,15 +219,24 @@ async function postResolveRequest(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(`${serverUrl}${PARTICIPANTS_RESOLVE_PATH}`, {
-      method: "POST",
-      headers: {
-        ...authHeaders,
-        "Content-Type": "application/json",
+    const response = await tauriFetch(
+      `${serverUrl}${PARTICIPANTS_RESOLVE_PATH}`,
+      {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
+    );
+    console.info("[digital-brain] participant_enrichment_http_response", {
+      path: PARTICIPANTS_RESOLVE_PATH,
+      status: response.status,
+      ok: response.ok,
     });
+    return response;
   } finally {
     clearTimeout(timeout);
   }
@@ -443,4 +494,20 @@ function uniqueNormalized(values: unknown[]) {
 
 function normalizeEmail(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return { message: String(error) };
+}
+
+function truncateLog(value: string, max = 500) {
+  return value.length > max ? `${value.slice(0, max)}...` : value;
 }

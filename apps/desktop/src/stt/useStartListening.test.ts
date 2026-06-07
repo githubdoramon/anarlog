@@ -20,6 +20,7 @@ const {
   createAppendBatchPersistMock,
   appendPersistMock,
   enrichSessionParticipantsFromDigitalBrainMock,
+  showNotificationMock,
   useAuthMock,
 } = vi.hoisted(() => ({
   queueAutoEnhanceIfSummaryEmptyMock: vi.fn(),
@@ -37,6 +38,7 @@ const {
   createAppendBatchPersistMock: vi.fn(),
   appendPersistMock: vi.fn(),
   enrichSessionParticipantsFromDigitalBrainMock: vi.fn(),
+  showNotificationMock: vi.fn(),
   useAuthMock: vi.fn(),
 }));
 
@@ -44,6 +46,12 @@ vi.mock("@hypr/plugin-fs-sync", () => ({
   commands: {
     audioPath: audioPathMock,
     audioSourceMetadata: audioSourceMetadataMock,
+  },
+}));
+
+vi.mock("@hypr/plugin-notification", () => ({
+  commands: {
+    showNotification: showNotificationMock,
   },
 }));
 
@@ -247,6 +255,20 @@ describe("useStartListening", () => {
     expect(queueAutoEnhanceIfSummaryEmptyMock).toHaveBeenCalledWith(
       "session-1",
     );
+    expect(showNotificationMock).toHaveBeenCalledWith({
+      key: "transcription-complete-session-1",
+      title: "Transcription complete",
+      message: "Review participants when you have a moment.",
+      timeout: null,
+      source: { type: "transcription_complete", session_id: "session-1" },
+      start_time: null,
+      participants: null,
+      event_details: null,
+      action_label: "Open meeting",
+      options: null,
+      footer: null,
+      icon: null,
+    });
   });
 
   test("enriches participants before starting listener", async () => {

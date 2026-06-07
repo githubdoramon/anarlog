@@ -405,7 +405,7 @@ const SessionItem = memo(
 
       if (capturedData) {
         addDeletion(capturedData, () => {
-          void fsSyncCommands.audioDelete(sessionId);
+          void fsSyncCommands.deleteSessionFolder(sessionId);
         });
       }
     }, [

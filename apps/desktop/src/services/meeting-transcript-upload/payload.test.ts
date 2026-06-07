@@ -100,6 +100,7 @@ describe("buildDigitalBrainTranscriptionPayload", () => {
         },
         identity: {
           kind: "current_user",
+          contact_id: null,
           email: "me@example.com",
           name: null,
         },
@@ -157,7 +158,10 @@ describe("buildDigitalBrainTranscriptionPayload", () => {
                 id: "word-1:user",
                 word_id: "word-1",
                 type: "user_speaker_assignment",
-                value: JSON.stringify({ human_id: "human-1" }),
+                value: JSON.stringify({
+                  human_id: "human-1",
+                  contact_id: "contact:alice",
+                }),
               },
             ]),
             memo_md: "",
@@ -179,6 +183,7 @@ describe("buildDigitalBrainTranscriptionPayload", () => {
         speaker: { channel: "remote_party", speaker_index: 2 },
         identity: {
           kind: "participant",
+          contact_id: "contact:alice",
           email: "alice@example.com",
           name: "Alice",
         },
@@ -191,6 +196,89 @@ describe("buildDigitalBrainTranscriptionPayload", () => {
       ended_at: new Date(200).toISOString(),
       text: "hello",
     });
+  });
+
+  it("uses the session time and transcript duration when a session has no calendar event start", () => {
+    const store = createStore(
+      {
+        sessions: {
+          "session-1": {
+            title: "Ad hoc call",
+            created_at: "2026-06-01T09:55:00Z",
+          },
+        },
+        events: {},
+        calendars: {},
+        humans: {},
+        mapping_session_participant: {},
+        transcripts: {
+          "transcript-1": {
+            session_id: "session-1",
+            user_id: "user-1",
+            created_at: "2026-06-01T10:00:00Z",
+            started_at: 1780308000000,
+            words: JSON.stringify([
+              {
+                ...word("word-1", 0),
+                end_ms: 1_800_000,
+              },
+            ]),
+            speaker_hints: "[]",
+            memo_md: "",
+          },
+        },
+      },
+      { user_id: "user-1" },
+    );
+
+    const payload = buildDigitalBrainTranscriptionPayload({
+      store,
+      sessionId: "session-1",
+    });
+
+    expect(payload?.meeting).toMatchObject({
+      original_id: "session-1",
+      provider: "hyprnote",
+      title: "Ad hoc call",
+      started_at: "2026-06-01T09:55:00Z",
+      ended_at: "2026-06-01T10:25:00.000Z",
+    });
+  });
+
+  it("uses the session creation time when transcript starts are not absolute timestamps", () => {
+    const store = createStore(
+      {
+        sessions: {
+          "session-1": {
+            title: "Imported call",
+            created_at: "2026-06-01T09:55:00Z",
+          },
+        },
+        events: {},
+        calendars: {},
+        humans: {},
+        mapping_session_participant: {},
+        transcripts: {
+          "transcript-1": {
+            session_id: "session-1",
+            user_id: "user-1",
+            created_at: "2026-06-01T10:00:00Z",
+            started_at: 0,
+            words: JSON.stringify([word("word-1", 0)]),
+            speaker_hints: "[]",
+            memo_md: "",
+          },
+        },
+      },
+      { user_id: "user-1" },
+    );
+
+    const payload = buildDigitalBrainTranscriptionPayload({
+      store,
+      sessionId: "session-1",
+    });
+
+    expect(payload?.meeting.started_at).toBe("2026-06-01T09:55:00Z");
   });
 
   it("identifies unassigned direct mic words as the current user", () => {
@@ -238,6 +326,7 @@ describe("buildDigitalBrainTranscriptionPayload", () => {
         speaker: { channel: "direct_mic", speaker_index: null },
         identity: {
           kind: "current_user",
+          contact_id: null,
           email: "me@example.com",
           name: "Me",
         },

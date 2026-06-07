@@ -305,4 +305,35 @@ describe("EventListeners notification events", () => {
       state: { view: null, autoStart: true },
     });
   });
+
+  test("notification_confirm with transcription_complete opens the completed session", async () => {
+    useMainStoreMock.mockReturnValue({} as never);
+
+    render(<EventListeners />);
+
+    await vi.waitFor(() =>
+      expect(notificationListenMock).toHaveBeenCalledTimes(1),
+    );
+
+    const handler = notificationListenMock.mock.calls[0]?.[0];
+    expect(handler).toBeTypeOf("function");
+
+    handler({
+      payload: {
+        type: "notification_confirm",
+        source: {
+          type: "transcription_complete",
+          session_id: "session-finished",
+        },
+      },
+    });
+
+    expect(createSessionMock).not.toHaveBeenCalled();
+    expect(getOrCreateSessionForEventIdMock).not.toHaveBeenCalled();
+    expect(openNewMock).toHaveBeenCalledWith({
+      type: "sessions",
+      id: "session-finished",
+      state: { view: null, autoStart: null },
+    });
+  });
 });

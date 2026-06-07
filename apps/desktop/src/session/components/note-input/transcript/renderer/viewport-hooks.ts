@@ -10,7 +10,7 @@ import {
 export function useScrollDetection(
   containerRef: RefObject<HTMLDivElement | null>,
 ) {
-  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isAtBottom, setIsAtBottom] = useState(false);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const lastScrollTopRef = useRef(0);
   const userScrolledAwayRef = useRef(false);
@@ -70,7 +70,7 @@ export function useAutoScroll(
 ) {
   const rafRef = useRef<number | null>(null);
   const lastHeightRef = useRef(0);
-  const initialFlushRef = useRef(enabled);
+  const initialFlushRef = useRef(false);
 
   useEffect(() => {
     const element = containerRef.current;

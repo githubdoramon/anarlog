@@ -2,8 +2,8 @@ use std::str::FromStr;
 
 use hypr_audio_utils::Source;
 use hypr_embedding::{EMBEDDING_DIM, EmbeddingExtractor};
+use hypr_transcribe_core::{TARGET_SAMPLE_RATE, split_resampled_channels};
 use hypr_transcription_core::listener2 as core;
-use hypr_transcription_core::{TARGET_SAMPLE_RATE, split_resampled_channels};
 
 use crate::listener2::Listener2PluginExt;
 use crate::{TranscriptionParams, VoiceEmbeddingObservation, VoiceEmbeddingWindow};

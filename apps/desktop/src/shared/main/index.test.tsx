@@ -82,10 +82,10 @@ describe("StandardTabWrapper", () => {
     expect(screen.getByTestId("resize-handle").dataset.disabled).toBe("false");
 
     const panels = screen.getAllByTestId("panel");
-    expect(panels[0]?.dataset.defaultSize).toBe("78");
-    expect(panels[1]?.dataset.defaultSize).toBe("22");
+    expect(panels[0]?.dataset.defaultSize).toBe("50");
+    expect(panels[1]?.dataset.defaultSize).toBe("50");
     expect(panels[1]?.dataset.maxSize).toBe("60");
-    expect(resizeMock).toHaveBeenCalledWith(22);
+    expect(resizeMock).toHaveBeenCalledWith(50);
   });
 
   it("sizes collapsed bottom content to its row instead of reserving split space", () => {

@@ -235,7 +235,7 @@ export function TimelineView() {
         addDeletion(
           capturedData,
           () => {
-            void fsSyncCommands.audioDelete(sessionId);
+            void fsSyncCommands.deleteSessionFolder(sessionId);
           },
           batchId,
         );

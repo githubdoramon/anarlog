@@ -1,3 +1,6 @@
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+
+import { commands as fsSyncCommands } from "@hypr/plugin-fs-sync";
 import { commands as transcriptionCommands } from "@hypr/plugin-transcription";
 import type { SpeakerHintStorage } from "@hypr/store";
 
@@ -11,7 +14,10 @@ import { id } from "~/shared/utils";
 
 type WorkerDeps = {
   store: DigitalBrainPayloadStore;
-  getAuthHeaders: () => { Authorization: string } | null;
+  getAuthHeaders: () =>
+    | { Authorization: string }
+    | null
+    | Promise<{ Authorization: string } | null>;
   getCurrentUserEmail: () => string | null | undefined;
 };
 
@@ -93,6 +99,7 @@ const TARGET_WINDOWS_PER_SPEAKER = 5;
 const MAX_WINDOWS_PER_SPEAKER = 8;
 const MATCH_WAIT_BUDGET_MS = 60_000;
 const DEFAULT_RETRY_AFTER_MS = 1500;
+const SPEAKER_CONFIRMATION_DEBOUNCE_MS = 30_000;
 
 let instance: SpeakerIdentificationService | null = null;
 
@@ -106,12 +113,59 @@ export function getSpeakerIdentificationService() {
 }
 
 export class SpeakerIdentificationService {
+  private confirmationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private confirmationOptions = new Map<
+    string,
+    { includeAutoAssignments: boolean }
+  >();
+
   constructor(private deps: WorkerDeps) {}
 
   dispose() {
+    for (const timer of this.confirmationTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.confirmationTimers.clear();
+    this.confirmationOptions.clear();
     if (instance === this) {
       instance = null;
     }
+  }
+
+  scheduleSpeakerConfirmation(
+    sessionId: string | null | undefined,
+    options: { includeAutoAssignments?: boolean } = {},
+  ) {
+    if (!sessionId) {
+      return;
+    }
+
+    const existing = this.confirmationTimers.get(sessionId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    const previousOptions = this.confirmationOptions.get(sessionId);
+    this.confirmationOptions.set(sessionId, {
+      includeAutoAssignments:
+        !!options.includeAutoAssignments ||
+        !!previousOptions?.includeAutoAssignments,
+    });
+
+    console.info("[speaker-id] confirmation scheduled", {
+      sessionId,
+      delayMs: SPEAKER_CONFIRMATION_DEBOUNCE_MS,
+    });
+
+    const timer = setTimeout(() => {
+      const nextOptions = this.confirmationOptions.get(sessionId) ?? {
+        includeAutoAssignments: false,
+      };
+      this.confirmationTimers.delete(sessionId);
+      this.confirmationOptions.delete(sessionId);
+      void this.confirmLatestSpeakerAssignments(sessionId, nextOptions);
+    }, SPEAKER_CONFIRMATION_DEBOUNCE_MS);
+    this.confirmationTimers.set(sessionId, timer);
   }
 
   async matchAndApplyBeforeEnhance(
@@ -119,7 +173,7 @@ export class SpeakerIdentificationService {
     audioPath: string | null,
   ) {
     const serverUrl = getServerUrl();
-    const headers = this.deps.getAuthHeaders();
+    const headers = await this.deps.getAuthHeaders();
     if (!serverUrl || !headers || !audioPath) {
       return null;
     }
@@ -197,6 +251,101 @@ export class SpeakerIdentificationService {
     );
     return match;
   }
+
+  private async confirmLatestSpeakerAssignments(
+    sessionId: string,
+    options: { includeAutoAssignments: boolean },
+  ) {
+    const serverUrl = getServerUrl();
+    const headers = await this.deps.getAuthHeaders();
+    if (!serverUrl || !headers) {
+      return null;
+    }
+
+    const audioPath = await resolveAudioPath(sessionId);
+    if (!audioPath) {
+      return null;
+    }
+
+    const payload = buildDigitalBrainTranscriptionPayload({
+      store: this.deps.store,
+      sessionId,
+      currentUserEmail: this.deps.getCurrentUserEmail(),
+    });
+    if (!payload) {
+      return null;
+    }
+
+    const confirmedSpeakers = payload.speaker_identities.filter((speaker) =>
+      isConfirmableSpeaker(speaker, options),
+    );
+    if (confirmedSpeakers.length === 0) {
+      return null;
+    }
+
+    const baseStartedAt = getBaseTranscriptStartedAt(
+      this.deps.store,
+      sessionId,
+    );
+    if (!baseStartedAt) {
+      return null;
+    }
+
+    const confirmedSpeakerIds = new Set(
+      confirmedSpeakers.map((speaker) => speaker.id),
+    );
+    const windows = buildEmbeddingWindows(
+      confirmedSpeakers,
+      payload.transcript.segments.filter((segment) =>
+        confirmedSpeakerIds.has(segment.speaker_id),
+      ),
+      baseStartedAt,
+    );
+    if (windows.length === 0) {
+      return null;
+    }
+
+    let observations: VoiceEmbeddingObservation[];
+    try {
+      const result = await transcriptionCommands.extractVoiceEmbeddings(
+        audioPath,
+        windows,
+      );
+      if (result.status === "error") {
+        console.info("[speaker-id] confirmation extraction skipped", {
+          sessionId,
+          error: result.error,
+        });
+        return null;
+      }
+      observations = result.data as VoiceEmbeddingObservation[];
+    } catch (error) {
+      console.info("[speaker-id] confirmation extraction failed", {
+        sessionId,
+        error,
+      });
+      return null;
+    }
+
+    const confirmObservations = buildSpeakerConfirmationPayload(
+      confirmedSpeakers,
+      observations,
+    );
+    if (confirmObservations.length === 0) {
+      return null;
+    }
+
+    return postConfirm(serverUrl, headers, {
+      session_id: sessionId,
+      observations: confirmObservations,
+      rejected_matches: [],
+    });
+  }
+}
+
+async function resolveAudioPath(sessionId: string) {
+  const result = await fsSyncCommands.audioPath(sessionId);
+  return result.status === "ok" && result.data ? result.data : null;
 }
 
 function getBaseTranscriptStartedAt(
@@ -254,7 +403,13 @@ function buildEmbeddingWindows(
     const startMs = Math.max(0, Math.round(startedAt - baseStartedAt));
     const endMs = startMs + Math.min(durationMs, MAX_WINDOW_MS);
     const window: VoiceEmbeddingWindow = {
-      id: id(),
+      id: voiceWindowId(
+        segment.speaker_id,
+        startMs,
+        endMs,
+        channel,
+        speaker?.speaker.speaker_index ?? null,
+      ),
       speaker_id: segment.speaker_id,
       start_ms: startMs,
       end_ms: endMs,
@@ -273,6 +428,23 @@ function buildEmbeddingWindows(
       MAX_WINDOWS_PER_SPEAKER,
     ),
   );
+}
+
+function voiceWindowId(
+  speakerId: string,
+  startMs: number,
+  endMs: number,
+  channel: number,
+  speakerIndex: number | null,
+) {
+  return [
+    "voice-window",
+    speakerId,
+    channel,
+    speakerIndex ?? "none",
+    startMs,
+    endMs,
+  ].join(":");
 }
 
 function selectSpreadWindows(
@@ -329,6 +501,77 @@ function buildSpeakerObservationPayload(
   });
 }
 
+function buildSpeakerConfirmationPayload(
+  speakers: DigitalBrainSpeakerIdentity[],
+  observations: VoiceEmbeddingObservation[],
+) {
+  const speakerById = new Map(speakers.map((speaker) => [speaker.id, speaker]));
+  const bySpeaker = new Map<string, VoiceEmbeddingObservation[]>();
+  for (const observation of observations) {
+    if (!speakerById.has(observation.speaker_id)) {
+      continue;
+    }
+    const existing = bySpeaker.get(observation.speaker_id) ?? [];
+    existing.push(observation);
+    bySpeaker.set(observation.speaker_id, existing);
+  }
+
+  return [...bySpeaker.entries()].flatMap(
+    ([speakerId, speakerObservations]) => {
+      const speaker = speakerById.get(speakerId);
+      const first = speakerObservations[0];
+      if (!speaker || !first) {
+        return [];
+      }
+      const email = speaker.identity.email?.trim() || null;
+      const name = speaker.identity.name?.trim() || null;
+      const contactId = speaker.identity.contact_id?.trim() || null;
+      if (!contactId && !email && !name) {
+        return [];
+      }
+      return [
+        {
+          speaker_id: speakerId,
+          contact_id: contactId,
+          email,
+          name,
+          embeddings: speakerObservations.map(
+            (observation) => observation.embedding,
+          ),
+          embedding_model: first.embedding_model,
+          embedding_dim: first.embedding_dim,
+          windows: speakerObservations.map((observation) => ({
+            id: observation.id,
+            duration_ms: observation.duration_ms,
+            channel: channelName(observation.channel),
+            speaker_index: observation.speaker_index ?? null,
+            word_count: observation.word_count ?? null,
+          })),
+          source:
+            speaker.source === "voice_auto_assignment"
+              ? "accepted_voice_match"
+              : "confirmed_assignment",
+        },
+      ];
+    },
+  );
+}
+
+function isConfirmableSpeaker(
+  speaker: DigitalBrainSpeakerIdentity,
+  options: { includeAutoAssignments: boolean },
+) {
+  if (speaker.identity.kind === "unknown") {
+    return false;
+  }
+  if (speaker.source === "user_assignment") {
+    return true;
+  }
+  return (
+    options.includeAutoAssignments && speaker.source === "voice_auto_assignment"
+  );
+}
+
 async function postMatchWithRetry(
   serverUrl: string,
   headers: { Authorization: string },
@@ -338,7 +581,7 @@ async function postMatchWithRetry(
   let attempt = 0;
   while (Date.now() - startedAt <= MATCH_WAIT_BUDGET_MS) {
     attempt += 1;
-    const response = await fetch(
+    const response = await tauriFetch(
       `${serverUrl}/api/orchestrator/meetings/speakers/match`,
       {
         method: "POST",
@@ -350,9 +593,11 @@ async function postMatchWithRetry(
       },
     );
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
       console.info("[speaker-id] backend match failed", {
         status: response.status,
         attempt,
+        errorText: truncateLog(errorText),
       });
       return null;
     }
@@ -367,6 +612,103 @@ async function postMatchWithRetry(
     await new Promise((resolve) => setTimeout(resolve, retryAfter));
   }
   return { status: "processing" } satisfies SpeakerMatchResponse;
+}
+
+async function postConfirm(
+  serverUrl: string,
+  headers: { Authorization: string },
+  body: unknown,
+) {
+  const request = summarizeConfirmRequest(body);
+  console.info("[speaker-id] backend confirm request", request);
+  try {
+    const response = await tauriFetch(
+      `${serverUrl}/api/orchestrator/meetings/speakers/confirm`,
+      {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.info("[speaker-id] backend confirm failed", {
+        status: response.status,
+        errorText: truncateLog(errorText),
+        request,
+      });
+      return null;
+    }
+    return response.json().catch(() => null);
+  } catch (error) {
+    console.info("[speaker-id] backend confirm request failed", {
+      error: serializeLogError(error),
+      request,
+    });
+    return null;
+  }
+}
+
+function summarizeConfirmRequest(body: unknown) {
+  if (!isRecord(body)) {
+    return { payloadType: typeof body };
+  }
+  const observations = Array.isArray(body.observations)
+    ? body.observations
+    : [];
+  const rejectedMatches = Array.isArray(body.rejected_matches)
+    ? body.rejected_matches
+    : [];
+  return {
+    sessionId: stringOrNull(body.session_id),
+    observationCount: observations.length,
+    rejectedMatchCount: rejectedMatches.length,
+    observations: observations.map((observation) => {
+      if (!isRecord(observation)) {
+        return { payloadType: typeof observation };
+      }
+      return {
+        speakerId: stringOrNull(observation.speaker_id),
+        hasContactId: Boolean(stringOrNull(observation.contact_id)),
+        hasEmail: Boolean(stringOrNull(observation.email)),
+        hasName: Boolean(stringOrNull(observation.name)),
+        embeddingCount: Array.isArray(observation.embeddings)
+          ? observation.embeddings.length
+          : 0,
+        windowCount: Array.isArray(observation.windows)
+          ? observation.windows.length
+          : 0,
+        embeddingModel: stringOrNull(observation.embedding_model),
+        embeddingDim:
+          typeof observation.embedding_dim === "number"
+            ? observation.embedding_dim
+            : null,
+        source: stringOrNull(observation.source),
+      };
+    }),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function serializeLogError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack ? truncateLog(error.stack, 1000) : undefined,
+    };
+  }
+  return String(error);
 }
 
 function applyAutoAssignments(
@@ -390,8 +732,18 @@ function applyAutoAssignments(
     if (!humanId) {
       continue;
     }
-    applyVoiceAutoAssignmentHint(store, sessionId, speaker, humanId);
+    applyVoiceAutoAssignmentHint(
+      store,
+      sessionId,
+      speaker,
+      humanId,
+      assignment.candidate.contact_id,
+    );
   }
+}
+
+function truncateLog(value: string, max = 500) {
+  return value.length > max ? `${value.slice(0, max)}...` : value;
 }
 
 function findOrCreateHuman(
@@ -447,6 +799,7 @@ function applyVoiceAutoAssignmentHint(
   sessionId: string,
   speaker: DigitalBrainSpeakerIdentity,
   humanId: string,
+  contactId: string | null,
 ) {
   const anchor = findAnchorWord(store, sessionId, speaker);
   if (!anchor) {
@@ -474,6 +827,7 @@ function applyVoiceAutoAssignmentHint(
     type: "voice_auto_assignment",
     value: JSON.stringify({
       human_id: humanId,
+      contact_id: contactId?.trim() || undefined,
       channel: nextScope.channel,
       speaker_index: nextScope.speakerIndex,
     }),

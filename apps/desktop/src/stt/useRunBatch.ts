@@ -7,6 +7,8 @@ import { useListener } from "./contexts";
 import { useKeywords } from "./useKeywords";
 import { useSTTConnection } from "./useSTTConnection";
 
+import { useAuth } from "~/auth";
+import { enrichSessionParticipantsFromDigitalBrain } from "~/services/digital-brain/participants";
 import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
 import { useConfigValue } from "~/shared/config";
 import { id } from "~/shared/utils";
@@ -51,6 +53,7 @@ const DIRECT_BATCH_PROVIDERS: Set<TranscriptionParams["provider"]> = new Set([
   "aquavoice",
 ]);
 
+const DIRECT_MIC_CHANNEL = 0;
 export const STOPPED_TRANSCRIPTION_ERROR_MESSAGE = "Transcription stopped.";
 
 type BatchAppendPersistOptions = {
@@ -102,6 +105,7 @@ export const useRunBatch = (sessionId: string) => {
   const store = main.UI.useStore(main.STORE_ID);
   const indexes = main.UI.useIndexes(main.STORE_ID);
   const { user_id } = main.UI.useValues(main.STORE_ID);
+  const auth = useAuth();
 
   const startTranscription = useListener((state) => state.startTranscription);
   const { conn } = useSTTConnection();
@@ -129,6 +133,17 @@ export const useRunBatch = (sessionId: string) => {
           `Batch transcription is not supported for provider: ${providerId}`,
         );
       }
+
+      const refreshedSession = await auth.refreshSession();
+      await enrichSessionParticipantsFromDigitalBrain({
+        store,
+        sessionId,
+        authHeaders: refreshedSession
+          ? { Authorization: `Bearer ${refreshedSession.access_token}` }
+          : null,
+        currentUserEmail:
+          refreshedSession?.user.email ?? auth.session?.user.email,
+      });
 
       const createdAt = new Date().toISOString();
       const memoMd = store.getCell("sessions", sessionId, "raw_md");
@@ -240,6 +255,16 @@ export const useRunBatch = (sessionId: string) => {
             });
           });
 
+          const selfAssignmentHint = createSelfSpeakerAssignmentHint({
+            userId: user_id ?? "",
+            words: newWords,
+            wordIds: newWordIds,
+            existingHints: [...existingHints, ...newHints],
+          });
+          if (selfAssignmentHint) {
+            newHints.push(selfAssignmentHint);
+          }
+
           updateTranscriptWords(store, currentTranscriptId, [
             ...existingWords,
             ...newWords,
@@ -271,6 +296,7 @@ export const useRunBatch = (sessionId: string) => {
     },
     [
       conn,
+      auth,
       aiLanguage,
       indexes,
       keywords,
@@ -370,6 +396,16 @@ export function createAppendBatchPersist({
       });
     });
 
+    const selfAssignmentHint = createSelfSpeakerAssignmentHint({
+      userId,
+      words: newWords,
+      wordIds: newWordIds,
+      existingHints: [...existingHints, ...newHints],
+    });
+    if (selfAssignmentHint) {
+      newHints.push(selfAssignmentHint);
+    }
+
     updateTranscriptWords(store, currentTranscriptId, [
       ...existingWords,
       ...newWords,
@@ -379,4 +415,68 @@ export function createAppendBatchPersist({
       ...newHints,
     ]);
   };
+}
+
+function createSelfSpeakerAssignmentHint({
+  userId,
+  words,
+  wordIds,
+  existingHints,
+}: {
+  userId: string;
+  words: Array<{ channel?: number }>;
+  wordIds: string[];
+  existingHints: SpeakerHintWithId[];
+}): SpeakerHintWithId | null {
+  if (!userId || hasDirectMicSpeakerAssignment(existingHints)) {
+    return null;
+  }
+
+  const wordIndex = words.findIndex(
+    (word) => word.channel === DIRECT_MIC_CHANNEL,
+  );
+  const wordId = wordIds[wordIndex];
+  if (wordIndex < 0 || !wordId) {
+    return null;
+  }
+
+  return {
+    id: `${wordId}:user_speaker_assignment`,
+    word_id: wordId,
+    type: "user_speaker_assignment",
+    value: JSON.stringify({
+      human_id: userId,
+      channel: DIRECT_MIC_CHANNEL,
+      speaker_index: null,
+    }),
+  };
+}
+
+function hasDirectMicSpeakerAssignment(hints: SpeakerHintWithId[]) {
+  return hints.some((hint) => {
+    if (
+      hint.type !== "user_speaker_assignment" &&
+      hint.type !== "voice_auto_assignment"
+    ) {
+      return false;
+    }
+
+    const value = parseHintValue(hint.value);
+    return (
+      value &&
+      typeof value === "object" &&
+      (value as { channel?: unknown }).channel === DIRECT_MIC_CHANNEL
+    );
+  });
+}
+
+function parseHintValue(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }

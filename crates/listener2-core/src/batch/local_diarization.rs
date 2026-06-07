@@ -7,6 +7,9 @@ use super::BatchRunOutput;
 
 const MIN_DIARIZATION_TURN_SECONDS: f64 = 0.25;
 const MIN_AUTO_SPEAKER_SECONDS: f64 = 3.0;
+const MIN_STABLE_SPEAKER_RUN_SECONDS: f64 = 5.0;
+const MAX_PRE_STABLE_ISLAND_SECONDS: f64 = 8.0;
+const PRE_STABLE_ISLAND_GAP_SECONDS: f64 = 20.0;
 const MAX_AUTO_SPEAKERS: usize = 2;
 const SPEAKER_SIMILARITY_THRESHOLD: f32 = 0.70;
 const DEBUG_ENV: &str = "LOCAL_DIARIZATION_DEBUG";
@@ -90,16 +93,9 @@ fn diarize_words_for_channel(
     if !force_speaker_count {
         assignments = merge_short_lived_speakers(&turns, assignments);
     }
+    assignments = merge_pre_stable_speaker_islands(&turns, assignments);
 
-    if assignments.iter().all(|speaker| *speaker == assignments[0]) {
-        return words;
-    }
-
-    for (turn, speaker) in turns.iter().zip(assignments) {
-        for word in &mut words[turn.word_range.clone()] {
-            word.speaker = Some(speaker);
-        }
-    }
+    apply_turn_speakers_to_words(&mut words, &turns, &assignments);
 
     words
 }
@@ -443,6 +439,201 @@ fn merge_short_lived_speakers(turns: &[WordTurn], assignments: Vec<usize>) -> Ve
     compact_speaker_indexes(merged)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpeakerRun {
+    turn_range: std::ops::Range<usize>,
+    speaker: usize,
+    start: f64,
+    end: f64,
+    duration: f64,
+}
+
+fn merge_pre_stable_speaker_islands(turns: &[WordTurn], assignments: Vec<usize>) -> Vec<usize> {
+    if turns.len() != assignments.len() || assignments.is_empty() {
+        return assignments;
+    }
+
+    let runs = speaker_runs(turns, &assignments);
+    if runs.len() < 2 {
+        return assignments;
+    }
+
+    let speaker_count = assignments.iter().copied().max().unwrap_or(0) + 1;
+    let mut first_stable_start = vec![None; speaker_count];
+    let mut durations = vec![0.0; speaker_count];
+
+    for run in &runs {
+        durations[run.speaker] += run.duration;
+        if run.duration >= MIN_STABLE_SPEAKER_RUN_SECONDS
+            && first_stable_start[run.speaker].is_none()
+        {
+            first_stable_start[run.speaker] = Some(run.start);
+        }
+    }
+
+    let dominant_speaker = durations
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| {
+            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(speaker, _)| speaker)
+        .unwrap_or(0);
+
+    let mut merged = assignments.clone();
+    for (run_idx, run) in runs.iter().enumerate() {
+        let Some(first_stable_start) = first_stable_start[run.speaker] else {
+            continue;
+        };
+
+        let is_pre_stable_island = run.end + PRE_STABLE_ISLAND_GAP_SECONDS < first_stable_start
+            && run.duration <= MAX_PRE_STABLE_ISLAND_SECONDS;
+        if !is_pre_stable_island {
+            continue;
+        }
+
+        let replacement =
+            nearest_run_speaker(&runs, run_idx).unwrap_or(if run.speaker == dominant_speaker {
+                nearest_other_speaker(&durations, run.speaker).unwrap_or(dominant_speaker)
+            } else {
+                dominant_speaker
+            });
+
+        for idx in run.turn_range.clone() {
+            merged[idx] = replacement;
+        }
+    }
+
+    compact_speaker_indexes(merged)
+}
+
+fn speaker_runs(turns: &[WordTurn], assignments: &[usize]) -> Vec<SpeakerRun> {
+    if turns.is_empty() || assignments.is_empty() {
+        return Vec::new();
+    }
+
+    let mut runs = Vec::new();
+    let mut start_idx = 0usize;
+    let mut speaker = assignments[0];
+
+    for idx in 1..assignments.len() {
+        if assignments[idx] == speaker {
+            continue;
+        }
+
+        runs.push(build_speaker_run(turns, assignments, start_idx..idx));
+        start_idx = idx;
+        speaker = assignments[idx];
+    }
+
+    runs.push(build_speaker_run(
+        turns,
+        assignments,
+        start_idx..assignments.len(),
+    ));
+    runs
+}
+
+fn build_speaker_run(
+    turns: &[WordTurn],
+    assignments: &[usize],
+    turn_range: std::ops::Range<usize>,
+) -> SpeakerRun {
+    let speaker = assignments[turn_range.start];
+    let start = turns[turn_range.start].start;
+    let end = turns[turn_range.end - 1].end;
+    let duration = turns[turn_range.clone()]
+        .iter()
+        .map(|turn| (turn.end - turn.start).max(0.0))
+        .sum();
+
+    SpeakerRun {
+        turn_range,
+        speaker,
+        start,
+        end,
+        duration,
+    }
+}
+
+fn nearest_run_speaker(runs: &[SpeakerRun], run_idx: usize) -> Option<usize> {
+    let run = runs.get(run_idx)?;
+
+    let previous = runs[..run_idx]
+        .iter()
+        .rev()
+        .find(|candidate| candidate.speaker != run.speaker);
+    let next = runs[run_idx + 1..]
+        .iter()
+        .find(|candidate| candidate.speaker != run.speaker);
+
+    match (previous, next) {
+        (Some(previous), Some(next)) => {
+            let previous_distance = (run.start - previous.end).max(0.0);
+            let next_distance = (next.start - run.end).max(0.0);
+            Some(if previous_distance <= next_distance {
+                previous.speaker
+            } else {
+                next.speaker
+            })
+        }
+        (Some(previous), None) => Some(previous.speaker),
+        (None, Some(next)) => Some(next.speaker),
+        (None, None) => None,
+    }
+}
+
+fn apply_turn_speakers_to_words(
+    words: &mut [batch::Word],
+    turns: &[WordTurn],
+    assignments: &[usize],
+) {
+    if turns.is_empty() || assignments.is_empty() {
+        return;
+    }
+
+    let mut speaker_by_word = vec![None; words.len()];
+    for (turn, speaker) in turns.iter().zip(assignments) {
+        for word_idx in turn.word_range.clone() {
+            speaker_by_word[word_idx] = Some(*speaker);
+        }
+    }
+
+    for (word_idx, word) in words.iter_mut().enumerate() {
+        let speaker =
+            speaker_by_word[word_idx].or_else(|| nearest_turn_speaker(word, turns, assignments));
+        if let Some(speaker) = speaker {
+            word.speaker = Some(speaker);
+        }
+    }
+}
+
+fn nearest_turn_speaker(
+    word: &batch::Word,
+    turns: &[WordTurn],
+    assignments: &[usize],
+) -> Option<usize> {
+    turns
+        .iter()
+        .zip(assignments)
+        .min_by(|(left_turn, _), (right_turn, _)| {
+            distance_to_turn(word, left_turn)
+                .partial_cmp(&distance_to_turn(word, right_turn))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(_, speaker)| *speaker)
+}
+
+fn distance_to_turn(word: &batch::Word, turn: &WordTurn) -> f64 {
+    if word.end <= turn.start {
+        turn.start - word.end
+    } else if turn.end <= word.start {
+        word.start - turn.end
+    } else {
+        0.0
+    }
+}
+
 fn nearest_stable_neighbor(
     turns: &[WordTurn],
     assignments: &[usize],
@@ -741,6 +932,64 @@ mod tests {
         let assignments = merge_short_lived_speakers(&turns, vec![0, 1, 0, 1]);
 
         assert_eq!(assignments, vec![0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn merge_pre_stable_speaker_islands_removes_early_false_entry() {
+        let turns = vec![
+            WordTurn {
+                word_range: 0..1,
+                start: 0.0,
+                end: 6.0,
+            },
+            WordTurn {
+                word_range: 1..2,
+                start: 8.0,
+                end: 10.0,
+            },
+            WordTurn {
+                word_range: 2..3,
+                start: 12.0,
+                end: 18.0,
+            },
+            WordTurn {
+                word_range: 3..4,
+                start: 60.0,
+                end: 67.0,
+            },
+            WordTurn {
+                word_range: 4..5,
+                start: 69.0,
+                end: 75.0,
+            },
+        ];
+
+        let assignments = merge_pre_stable_speaker_islands(&turns, vec![0, 1, 0, 1, 0]);
+
+        assert_eq!(assignments, vec![0, 0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn apply_turn_speakers_fills_words_without_turns_from_nearest_turn() {
+        let mut words = vec![word(0.0, 1.0), word(1.1, 1.2), word(2.0, 3.0)];
+        let turns = vec![
+            WordTurn {
+                word_range: 0..1,
+                start: 0.0,
+                end: 1.0,
+            },
+            WordTurn {
+                word_range: 2..3,
+                start: 2.0,
+                end: 3.0,
+            },
+        ];
+
+        apply_turn_speakers_to_words(&mut words, &turns, &[0, 1]);
+
+        assert_eq!(words[0].speaker, Some(0));
+        assert_eq!(words[1].speaker, Some(0));
+        assert_eq!(words[2].speaker, Some(1));
     }
 
     #[test]

@@ -87,7 +87,14 @@ function SpeakerIdentificationInit() {
 
     const service = initSpeakerIdentificationService({
       store,
-      getAuthHeaders: () => authRef.current.getHeaders(),
+      getAuthHeaders: async () => {
+        const session = await authRef.current.refreshSession();
+        return session
+          ? {
+              Authorization: `Bearer ${session.access_token}`,
+            }
+          : null;
+      },
       getCurrentUserEmail: () => authRef.current.session?.user.email,
     });
 

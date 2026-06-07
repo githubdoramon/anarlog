@@ -20,6 +20,7 @@ export type DigitalBrainSpeakerIdentity = {
   };
   identity: {
     kind: "current_user" | "participant" | "unknown";
+    contact_id: string | null;
     email: string | null;
     name: string | null;
   };
@@ -44,7 +45,7 @@ export type DigitalBrainTranscriptionPayload = {
   transcript_hash: string;
   meeting: {
     original_id: string | null;
-    provider: "google" | "apple" | "outlook" | null;
+    provider: "google" | "apple" | "outlook" | "hyprnote" | null;
     title: string;
     description: string | null;
     started_at: string | null;

@@ -8,6 +8,8 @@ import {
 } from "@hypr/ui/components/ui/popover";
 import { cn } from "@hypr/utils";
 
+import { getMeetingTranscriptUploadService } from "~/services/meeting-transcript-upload";
+import { getSpeakerIdentificationService } from "~/services/speaker-identification";
 import * as main from "~/store/tinybase/store/main";
 import type { Segment } from "~/stt/live-segment";
 import { upsertSpeakerAssignment } from "~/stt/utils";
@@ -45,9 +47,13 @@ export function SpeakerAssignPopover({
         humanId,
         anchorWordId,
       );
+      getMeetingTranscriptUploadService()?.scheduleSpeakerAssignmentUpload(
+        sessionId,
+      );
+      getSpeakerIdentificationService()?.scheduleSpeakerConfirmation(sessionId);
       setOpen(false);
     },
-    [store, transcriptId, segment.key, segment.words],
+    [store, transcriptId, segment.key, segment.words, sessionId],
   );
 
   return (

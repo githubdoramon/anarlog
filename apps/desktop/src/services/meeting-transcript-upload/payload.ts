@@ -68,6 +68,7 @@ type SegmentKey = {
   channel: SegmentChannel;
   speaker_index: number | null;
   human_id: string | null;
+  contact_id: string | null;
   assignment_source:
     | "user_assignment"
     | "voice_auto_assignment"
@@ -83,6 +84,7 @@ type SegmentWord = {
   channel: SegmentChannel;
   speaker_index: number | null;
   human_id: string | null;
+  contact_id: string | null;
   assignment_source:
     | "user_assignment"
     | "voice_auto_assignment"
@@ -95,6 +97,7 @@ type SegmentSpeaker = {
   channel: SegmentChannel;
   speaker_index: number | null;
   human_id: string | null;
+  contact_id: string | null;
   kind: "current_user" | "participant" | "unknown";
   email: string | null;
   name: string | null;
@@ -127,6 +130,7 @@ type ProviderSpeakerHintValue = {
 
 type UserSpeakerAssignmentValue = {
   human_id?: unknown;
+  contact_id?: unknown;
   channel?: unknown;
   speaker_index?: unknown;
 };
@@ -148,6 +152,18 @@ export function buildDigitalBrainTranscriptionPayload({
   const event = findEventForSession(store, sessionEvent);
   const provider = getProvider(store, sessionEvent, event);
   const participants = collectParticipants(store, sessionId, event);
+  const meetingStartedAt = resolveMeetingStartedAt({
+    session,
+    sessionEvent,
+    event,
+    transcriptJson,
+  });
+  const meetingEndedAt = resolveMeetingEndedAt({
+    sessionEvent,
+    event,
+    transcriptJson,
+    meetingStartedAt,
+  });
   const detailedSegments = buildDetailedTranscriptSegments({
     store,
     sessionId,
@@ -182,18 +198,17 @@ export function buildDigitalBrainTranscriptionPayload({
       original_id:
         provider === "google" && typeof sessionEvent?.tracking_id === "string"
           ? sessionEvent.tracking_id
-          : null,
-      provider,
+          : provider == null
+            ? sessionId
+            : null,
+      provider: provider ?? "hyprnote",
       title:
         stringOrNull(sessionEvent?.title) ?? stringOrNull(session?.title) ?? "",
       description:
         stringOrNull(sessionEvent?.description) ??
         stringOrNull(event?.description),
-      started_at:
-        stringOrNull(sessionEvent?.started_at) ??
-        stringOrNull(event?.started_at),
-      ended_at:
-        stringOrNull(sessionEvent?.ended_at) ?? stringOrNull(event?.ended_at),
+      started_at: meetingStartedAt,
+      ended_at: meetingEndedAt,
     },
     participants,
     speaker_identities: speakerIdentities,
@@ -284,6 +299,151 @@ function getProvider(
     : null;
 }
 
+function resolveMeetingStartedAt({
+  session,
+  sessionEvent,
+  event,
+  transcriptJson,
+}: {
+  session: Record<string, any> | undefined;
+  sessionEvent: SessionEvent | undefined;
+  event: Record<string, any> | null;
+  transcriptJson: TranscriptJson;
+}) {
+  return (
+    isoStringOrNull(sessionEvent?.started_at) ??
+    isoStringOrNull(event?.started_at) ??
+    isoStringOrNull(session?.created_at) ??
+    earliestTranscriptStartedAt(transcriptJson)
+  );
+}
+
+function earliestTranscriptStartedAt(transcriptJson: TranscriptJson) {
+  const startedAt = Math.min(
+    ...transcriptJson.transcripts
+      .map((transcript) => transcript.started_at)
+      .filter((value) => Number.isFinite(value) && value > 0),
+  );
+
+  return Number.isFinite(startedAt)
+    ? new Date(Math.round(startedAt)).toISOString()
+    : null;
+}
+
+function resolveMeetingEndedAt({
+  sessionEvent,
+  event,
+  transcriptJson,
+  meetingStartedAt,
+}: {
+  sessionEvent: SessionEvent | undefined;
+  event: Record<string, any> | null;
+  transcriptJson: TranscriptJson;
+  meetingStartedAt: string | null;
+}) {
+  const explicitEndedAt =
+    isoStringOrNull(sessionEvent?.ended_at) ?? isoStringOrNull(event?.ended_at);
+  if (explicitEndedAt) {
+    return explicitEndedAt;
+  }
+
+  const durationMs = transcriptDurationMs(transcriptJson);
+  if (durationMs != null && meetingStartedAt) {
+    return new Date(Date.parse(meetingStartedAt) + durationMs).toISOString();
+  }
+
+  return latestTranscriptEndedAt(transcriptJson);
+}
+
+function transcriptDurationMs(transcriptJson: TranscriptJson) {
+  let earliestStartedAt: number | null = null;
+  let latestAbsoluteEndedAt: number | null = null;
+  let latestRelativeEndedAt: number | null = null;
+
+  for (const transcript of transcriptJson.transcripts) {
+    const latestWordEndMs = latestWordEndOffsetMs(transcript);
+
+    if (Number.isFinite(transcript.started_at) && transcript.started_at > 0) {
+      earliestStartedAt =
+        earliestStartedAt == null
+          ? transcript.started_at
+          : Math.min(earliestStartedAt, transcript.started_at);
+      const endedAt =
+        typeof transcript.ended_at === "number" && transcript.ended_at > 0
+          ? transcript.ended_at
+          : latestWordEndMs != null
+            ? transcript.started_at + latestWordEndMs
+            : null;
+      if (endedAt != null) {
+        latestAbsoluteEndedAt =
+          latestAbsoluteEndedAt == null
+            ? endedAt
+            : Math.max(latestAbsoluteEndedAt, endedAt);
+      }
+      continue;
+    }
+
+    if (latestWordEndMs != null) {
+      latestRelativeEndedAt =
+        latestRelativeEndedAt == null
+          ? latestWordEndMs
+          : Math.max(latestRelativeEndedAt, latestWordEndMs);
+    }
+  }
+
+  if (earliestStartedAt != null && latestAbsoluteEndedAt != null) {
+    return Math.max(0, latestAbsoluteEndedAt - earliestStartedAt);
+  }
+
+  return latestRelativeEndedAt;
+}
+
+function latestTranscriptEndedAt(transcriptJson: TranscriptJson) {
+  const endedAt = Math.max(
+    ...transcriptJson.transcripts
+      .map((transcript) => {
+        if (
+          typeof transcript.ended_at === "number" &&
+          transcript.ended_at > 0
+        ) {
+          return transcript.ended_at;
+        }
+
+        if (
+          !Number.isFinite(transcript.started_at) ||
+          transcript.started_at <= 0
+        ) {
+          return null;
+        }
+
+        const latestWordEndMs = latestWordEndOffsetMs(transcript);
+
+        return latestWordEndMs != null
+          ? transcript.started_at + latestWordEndMs
+          : null;
+      })
+      .filter(
+        (value): value is number => value != null && Number.isFinite(value),
+      ),
+  );
+
+  return Number.isFinite(endedAt)
+    ? new Date(Math.round(endedAt)).toISOString()
+    : null;
+}
+
+function latestWordEndOffsetMs(
+  transcript: TranscriptJson["transcripts"][number],
+) {
+  const latestWordEndMs = Math.max(
+    ...(transcript.words as TranscriptWord[])
+      .map((word) => numberOrNull(word.end_ms))
+      .filter((value): value is number => value != null),
+  );
+
+  return Number.isFinite(latestWordEndMs) ? latestWordEndMs : null;
+}
+
 function collectParticipants(
   store: DigitalBrainPayloadStore,
   sessionId: string,
@@ -363,6 +523,7 @@ function buildDetailedTranscriptSegments({
         channel: word.channel,
         speaker_index: word.speaker_index,
         human_id: word.human_id,
+        contact_id: word.contact_id,
         assignment_source: word.assignment_source,
       };
       const last = segments[segments.length - 1];
@@ -431,6 +592,7 @@ function buildSpeakerAssignments(
     SegmentChannel,
     {
       human_id: string;
+      contact_id: string | null;
       source: "user_assignment" | "voice_auto_assignment" | "inferred_channel";
     }
   >();
@@ -438,6 +600,7 @@ function buildSpeakerAssignments(
     string,
     {
       human_id: string;
+      contact_id: string | null;
       source: "user_assignment" | "voice_auto_assignment" | "inferred_channel";
     }
   >();
@@ -457,10 +620,12 @@ function buildSpeakerAssignments(
   ) {
     byChannel.set("direct_mic", {
       human_id: selfHumanId,
+      contact_id: null,
       source: "inferred_channel",
     });
     byChannel.set("remote_party", {
       human_id: uniqueOtherParticipant[0],
+      contact_id: null,
       source: "inferred_channel",
     });
     completeChannels.add("remote_party");
@@ -517,6 +682,7 @@ function buildSpeakerAssignments(
       if (speakerIndex == null) {
         byChannel.set(channel, {
           human_id: value.human_id,
+          contact_id: stringOrNull(value.contact_id),
           source:
             hint.type === "voice_auto_assignment"
               ? "voice_auto_assignment"
@@ -526,6 +692,7 @@ function buildSpeakerAssignments(
       } else {
         byChannelSpeaker.set(segmentSpeakerKey(channel, speakerIndex), {
           human_id: value.human_id,
+          contact_id: stringOrNull(value.contact_id),
           source:
             hint.type === "voice_auto_assignment"
               ? "voice_auto_assignment"
@@ -581,6 +748,7 @@ function buildSegmentWords(
           channel,
           speaker_index: null,
           human_id: null,
+          contact_id: null,
           assignment_source: null,
         },
       ];
@@ -628,6 +796,7 @@ function buildSegmentWords(
       : null;
     const assignment = scopedAssignment ?? channelAssignment ?? null;
     word.human_id = assignment?.human_id ?? null;
+    word.contact_id = assignment?.contact_id ?? null;
     word.assignment_source = assignment?.source ?? null;
   }
 
@@ -650,7 +819,8 @@ function buildSegmentSpeaker({
   currentUserEmail?: string | null;
   unknownLabels: Map<string, string>;
 }): SegmentSpeaker {
-  const human = key.human_id ? store.getRow("humans", key.human_id) : null;
+  const humanId = key.human_id ?? selfHumanId;
+  const human = humanId ? store.getRow("humans", humanId) : null;
   const isCurrentUser =
     key.human_id === selfHumanId ||
     (!key.human_id &&
@@ -664,6 +834,7 @@ function buildSegmentSpeaker({
       channel: key.channel,
       speaker_index: key.speaker_index,
       human_id: key.human_id ?? selfHumanId,
+      contact_id: key.contact_id,
       kind: "current_user",
       email: currentUserEmail ?? stringOrNull(human?.email),
       name: stringOrNull(human?.name),
@@ -677,6 +848,7 @@ function buildSegmentSpeaker({
       channel: key.channel,
       speaker_index: key.speaker_index,
       human_id: key.human_id,
+      contact_id: key.contact_id,
       kind: "participant",
       email: stringOrNull(human?.email),
       name: stringOrNull(human?.name),
@@ -691,6 +863,7 @@ function buildSegmentSpeaker({
     channel: key.channel,
     speaker_index: key.speaker_index,
     human_id: null,
+    contact_id: null,
     kind: "unknown",
     email: null,
     name: null,
@@ -719,6 +892,7 @@ function buildSpeakerIdentities(segments: DetailedTranscriptSegment[]) {
       },
       identity: {
         kind: segment.speaker.kind,
+        contact_id: segment.speaker.contact_id,
         email: segment.speaker.email,
         name: segment.speaker.name,
       },
@@ -767,6 +941,7 @@ function sameSegmentKey(a: SegmentKey, b: SegmentKey) {
     a.channel === b.channel &&
     a.speaker_index === b.speaker_index &&
     a.human_id === b.human_id &&
+    a.contact_id === b.contact_id &&
     a.assignment_source === b.assignment_source
   );
 }
@@ -776,7 +951,7 @@ function segmentSpeakerKey(channel: SegmentChannel, speakerIndex: number) {
 }
 
 function serializeSegmentKey(key: SegmentKey) {
-  return `${key.channel}:${key.speaker_index ?? "null"}:${key.human_id ?? "null"}:${key.assignment_source ?? "null"}`;
+  return `${key.channel}:${key.speaker_index ?? "null"}:${key.human_id ?? "null"}:${key.contact_id ?? "null"}:${key.assignment_source ?? "null"}`;
 }
 
 function normalizeRenderedWordText(text: string, isFirstWord: boolean) {
@@ -862,6 +1037,15 @@ function hashString(value: string): string {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function isoStringOrNull(value: unknown): string | null {
+  const text = stringOrNull(value);
+  if (!text) {
+    return null;
+  }
+
+  return Number.isNaN(Date.parse(text)) ? null : text;
 }
 
 function numberOrNull(value: unknown): number | null {

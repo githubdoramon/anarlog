@@ -228,6 +228,15 @@ export type ProviderSpeakerStat = {
   assignedHumanId?: string;
 };
 
+export type DirectMicSpeakerStat = {
+  wordCount: number;
+  durationMs: number;
+  anchorWordId: string;
+  assignedHumanId?: string;
+};
+
+const DIRECT_MIC_CHANNEL = 0;
+
 export function getProviderSpeakerStats(
   store: TranscriptReader,
   transcriptId: string,
@@ -298,6 +307,53 @@ export function getProviderSpeakerStats(
 
     return left.anchorWordId.localeCompare(right.anchorWordId);
   });
+}
+
+export function getDirectMicSpeakerStat(
+  store: TranscriptReader & SpeakerCountStore,
+  transcriptId: string,
+): DirectMicSpeakerStat | null {
+  const words = parseTranscriptWords(store, transcriptId);
+  const hints = parseTranscriptHints(store, transcriptId);
+  let stat: DirectMicSpeakerStat | null = null;
+
+  for (const word of words) {
+    if (!isCompleteWord(word) || word.channel !== DIRECT_MIC_CHANNEL) {
+      continue;
+    }
+
+    stat ??= {
+      wordCount: 0,
+      durationMs: 0,
+      anchorWordId: word.id,
+    };
+    stat.wordCount += 1;
+    stat.durationMs += Math.max(0, word.end_ms - word.start_ms);
+  }
+
+  if (!stat) {
+    return null;
+  }
+
+  for (const hint of hints) {
+    const assignment = parseUserSpeakerAssignment(hint);
+    if (!assignment) {
+      continue;
+    }
+    if (
+      assignment.channel === DIRECT_MIC_CHANNEL ||
+      (assignment.channel === undefined && hint.word_id === stat.anchorWordId)
+    ) {
+      stat.assignedHumanId = assignment.human_id;
+      break;
+    }
+  }
+
+  const selfHumanId = store.getValue("user_id");
+  stat.assignedHumanId ??=
+    typeof selfHumanId === "string" ? selfHumanId : undefined;
+
+  return stat;
 }
 
 function isCompleteWord(word: WordWithId): word is CompleteWord {

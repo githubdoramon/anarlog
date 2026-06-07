@@ -239,6 +239,6 @@ export function deleteSessionCascade(
   }
 
   if (!options?.skipAudio) {
-    void fsSyncCommands.audioDelete(sessionId);
+    void fsSyncCommands.deleteSessionFolder(sessionId);
   }
 }

@@ -19078,6 +19078,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "transcribe-core",
  "transcribe-soniqo",
  "transcript",
  "transcription-core",

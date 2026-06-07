@@ -101,6 +101,8 @@ pub struct NotificationFooter {
 pub enum NotificationSource {
     #[serde(rename = "calendar_event")]
     CalendarEvent { event_id: String },
+    #[serde(rename = "transcription_complete")]
+    TranscriptionComplete { session_id: String },
     #[serde(rename = "mic_detected")]
     MicDetected {
         app_names: Vec<String>,
@@ -179,6 +181,7 @@ impl NotificationSource {
                 base: NotificationIconAsset::AppIcon,
                 badge: NotificationIconAsset::Calendar,
             }),
+            Self::TranscriptionComplete { .. } => None,
             Self::MicDetected { app_ids, .. } => app_ids
                 .iter()
                 .find_map(|app_id| NotificationIcon::from_app_id(app_id)),

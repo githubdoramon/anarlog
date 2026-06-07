@@ -92,6 +92,7 @@ function useNotificationEvents() {
   const openNew = useTabs((state) => state.openNew);
   const pendingAutoStart = useRef<{
     eventId: string | null;
+    completedTranscriptionSessionId: string | null;
     triggerAppIds: string[] | null;
   } | null>(null);
   const storeRef = useRef(store);
@@ -106,20 +107,21 @@ function useNotificationEvents() {
 
   useEffect(() => {
     if (pendingAutoStart.current && store) {
-      const { eventId, triggerAppIds } = pendingAutoStart.current;
+      const { eventId, completedTranscriptionSessionId, triggerAppIds } =
+        pendingAutoStart.current;
       pendingAutoStart.current = null;
       const sessionId = eventId
         ? getOrCreateSessionForEventId(store, eventId)
-        : createSession(store);
+        : completedTranscriptionSessionId
+          ? completedTranscriptionSessionId
+          : createSession(store);
 
       if (triggerAppIds && triggerAppIds.length > 0) {
         listenerStore.getState().setTriggerAppIds(triggerAppIds);
       }
-      const autoStart = shouldAutoStartNotificationSession(
-        store,
-        eventId,
-        triggerAppIds,
-      );
+      const autoStart = completedTranscriptionSessionId
+        ? false
+        : shouldAutoStartNotificationSession(store, eventId, triggerAppIds);
 
       openNew({
         type: "sessions",
@@ -147,27 +149,39 @@ function useNotificationEvents() {
             payload.source?.type === "calendar_event"
               ? payload.source.event_id
               : null;
+          const completedTranscriptionSessionId =
+            payload.source?.type === "transcription_complete"
+              ? payload.source.session_id
+              : null;
           const triggerAppIds =
             payload.source?.type === "mic_detected"
               ? (payload.source.app_ids ?? null)
               : null;
           const currentStore = storeRef.current;
           if (!currentStore) {
-            pendingAutoStart.current = { eventId, triggerAppIds };
+            pendingAutoStart.current = {
+              eventId,
+              completedTranscriptionSessionId,
+              triggerAppIds,
+            };
             return;
           }
           const sessionId = eventId
             ? getOrCreateSessionForEventId(currentStore, eventId)
-            : createSession(currentStore);
+            : completedTranscriptionSessionId
+              ? completedTranscriptionSessionId
+              : createSession(currentStore);
 
           if (triggerAppIds && triggerAppIds.length > 0) {
             listenerStore.getState().setTriggerAppIds(triggerAppIds);
           }
-          const autoStart = shouldAutoStartNotificationSession(
-            currentStore,
-            eventId,
-            triggerAppIds,
-          );
+          const autoStart = completedTranscriptionSessionId
+            ? false
+            : shouldAutoStartNotificationSession(
+                currentStore,
+                eventId,
+                triggerAppIds,
+              );
 
           openNewRef.current({
             type: "sessions",

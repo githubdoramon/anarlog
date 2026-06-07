@@ -16,8 +16,10 @@ import { env } from "~/env";
 
 const RETRYABLE_STATUS_CODES = new Set([408, 429]);
 const PERMANENT_STATUS_CODES = new Set([400, 403, 404, 422]);
+const QUEUE_POLL_INTERVAL_MS = 30 * 1000;
+const MIN_BACKOFF_MS = 60 * 1000;
 const MAX_BACKOFF_MS = 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 30 * 1000;
+const REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 const LOG_PREFIX = "[meeting-transcript-upload]";
 
 type QueueInput = {
@@ -135,7 +137,7 @@ export class MeetingTranscriptUploadService {
     log("service_start");
     this.timer = setInterval(() => {
       void this.processNext();
-    }, 10_000);
+    }, QUEUE_POLL_INTERVAL_MS);
     void this.processNext();
   }
 
@@ -178,9 +180,45 @@ export class MeetingTranscriptUploadService {
     return payload;
   }
 
+  scheduleSpeakerAssignmentUpload(sessionId: string | null | undefined) {
+    if (!sessionId) {
+      return;
+    }
+    void this.enqueueLatestSpeakerAssignmentUpload(sessionId);
+  }
+
+  private async enqueueLatestSpeakerAssignmentUpload(sessionId: string) {
+    log("speaker_assignment_upload_enqueue_start", { sessionId });
+    await this.deleteUnsentSessionRows(sessionId);
+    const payload = await enqueueMeetingTranscriptUpload({
+      store: this.deps.store,
+      sessionId,
+      currentUserEmail: this.deps.getCurrentUserEmail(),
+    });
+    if (!payload) {
+      return;
+    }
+
+    await this.processNext();
+  }
+
+  private async deleteUnsentSessionRows(sessionId: string) {
+    await db
+      .delete(meetingTranscriptUploadQueue)
+      .where(
+        and(
+          eq(meetingTranscriptUploadQueue.sessionId, sessionId),
+          or(
+            eq(meetingTranscriptUploadQueue.status, "pending"),
+            eq(meetingTranscriptUploadQueue.status, "auth_required"),
+            eq(meetingTranscriptUploadQueue.status, "config_missing"),
+          ),
+        ),
+      );
+  }
+
   async processNext() {
     if (this.running) {
-      log("process_skip_already_running");
       return;
     }
 
@@ -220,7 +258,6 @@ export class MeetingTranscriptUploadService {
 
     const row = rows[0];
     if (!row) {
-      log("process_skip_no_due_rows");
       return;
     }
 
@@ -259,6 +296,29 @@ export class MeetingTranscriptUploadService {
         lastError: "Queued payload JSON is invalid.",
       });
       return;
+    }
+
+    const refreshedPayload = buildDigitalBrainTranscriptionPayload({
+      store: this.deps.store,
+      sessionId: row.sessionId,
+      currentUserEmail: this.deps.getCurrentUserEmail(),
+    });
+    if (refreshedPayload?.transcript_hash === row.transcriptHash) {
+      payload = refreshedPayload;
+      const payloadJson = JSON.stringify(refreshedPayload);
+      if (payloadJson !== row.payloadJson) {
+        await db
+          .update(meetingTranscriptUploadQueue)
+          .set({
+            payloadJson,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(meetingTranscriptUploadQueue.id, row.id));
+        log("process_row_payload_refreshed", {
+          id: row.id,
+          sessionId: row.sessionId,
+        });
+      }
     }
 
     try {
@@ -438,7 +498,7 @@ async function markRow(
 function nextAttemptAt(attemptCount: number) {
   const delayMs = Math.min(
     MAX_BACKOFF_MS,
-    1000 * Math.pow(2, Math.max(0, attemptCount - 1)),
+    MIN_BACKOFF_MS * Math.pow(2, Math.max(0, attemptCount - 1)),
   );
   return new Date(Date.now() + delayMs).toISOString();
 }

@@ -8,7 +8,7 @@ import {
 } from "@hypr/ui/components/ui/resizable";
 import { cn } from "@hypr/utils";
 
-const RESIZABLE_AFTER_BORDER_EXPANDED_SIZE = 22;
+const RESIZABLE_AFTER_BORDER_EXPANDED_SIZE = 50;
 
 export { MainShellBodyFrame } from "./body-frame";
 export { MainChatPanels } from "./chat-panels";

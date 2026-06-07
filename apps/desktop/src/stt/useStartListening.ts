@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 
 import { commands as analyticsCommands } from "@hypr/plugin-analytics";
 import { commands as fsSyncCommands } from "@hypr/plugin-fs-sync";
+import { commands as notificationCommands } from "@hypr/plugin-notification";
 import type { TranscriptStorage } from "@hypr/store";
 
 import { useListener } from "./contexts";
@@ -40,6 +41,23 @@ import { applyLiveTranscriptDelta } from "~/stt/utils";
 
 const AUDIO_PATH_RETRY_COUNT = 10;
 const AUDIO_PATH_RETRY_DELAY_MS = 200;
+
+function showTranscriptionCompleteNotification(sessionId: string) {
+  void notificationCommands.showNotification({
+    key: `transcription-complete-${sessionId}`,
+    title: "Transcription complete",
+    message: "Review participants when you have a moment.",
+    timeout: null,
+    source: { type: "transcription_complete", session_id: sessionId },
+    start_time: null,
+    participants: null,
+    event_details: null,
+    action_label: "Open meeting",
+    options: null,
+    footer: null,
+    icon: null,
+  });
+}
 
 async function resolveStoppedAudioPath(
   sessionId: string,
@@ -181,6 +199,18 @@ export function useStartListening(sessionId: string) {
     );
     const captureConn = conn;
     const canRunBatchAfterStop = canRunBatchTranscription(captureConn);
+
+    const refreshedSession = await auth.refreshSession();
+    await enrichSessionParticipantsFromDigitalBrain({
+      store,
+      sessionId,
+      authHeaders: refreshedSession
+        ? { Authorization: `Bearer ${refreshedSession.access_token}` }
+        : null,
+      currentUserEmail:
+        refreshedSession?.user.email ?? auth.session?.user.email,
+    });
+
     const expectedRemoteSpeakerCount = getExpectedRemoteSpeakerCount(
       store,
       sessionId,
@@ -247,6 +277,8 @@ export function useStartListening(sessionId: string) {
         return;
       }
 
+      showTranscriptionCompleteNotification(sessionId);
+
       if (details.liveTranscriptionActive) {
         void getMeetingTranscriptUploadService()?.enqueueSession(sessionId);
       }
@@ -281,13 +313,6 @@ export function useStartListening(sessionId: string) {
         applyLiveTranscriptDelta(store, transcriptId!, delta);
       });
     };
-
-    await enrichSessionParticipantsFromDigitalBrain({
-      store,
-      sessionId,
-      authHeaders: auth.getHeaders(),
-      currentUserEmail: auth.session?.user.email,
-    });
 
     const participantHumanIds = collectSessionParticipantHumanIds(
       store,

@@ -64,7 +64,9 @@ export function RenderTranscript({
       scrollElement={scrollElement}
       transcriptId={transcriptId}
       offsetMs={offsetMs}
-      shouldScrollToEnd={isLastTranscript && isAtBottom}
+      shouldScrollToEnd={
+        isLastTranscript && isAtBottom && liveSegments.length > 0
+      }
       currentMs={currentMs}
       seek={seek}
       startPlayback={startPlayback}
