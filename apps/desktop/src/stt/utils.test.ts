@@ -85,7 +85,7 @@ describe("upsertSpeakerAssignment", () => {
       ]),
     });
 
-    upsertSpeakerAssignment(
+    const changed = upsertSpeakerAssignment(
       store,
       "transcript-1",
       remoteSpeakerKey(2),
@@ -93,6 +93,7 @@ describe("upsertSpeakerAssignment", () => {
       "new-word",
     );
 
+    expect(changed).toBe(true);
     expect(
       JSON.parse(
         store.getCell("transcripts", "transcript-1", "speaker_hints") as string,
@@ -240,7 +241,7 @@ describe("upsertSpeakerAssignment", () => {
       speaker_hints: JSON.stringify([]),
     });
 
-    upsertSpeakerAssignment(
+    const changed = upsertSpeakerAssignment(
       store,
       "transcript-1",
       remoteSpeakerKey(0),
@@ -248,6 +249,7 @@ describe("upsertSpeakerAssignment", () => {
       "anchor-word",
     );
 
+    expect(changed).toBe(true);
     expect(
       JSON.parse(
         store.getCell("transcripts", "transcript-1", "speaker_hints") as string,
@@ -280,7 +282,7 @@ describe("upsertSpeakerAssignment", () => {
       speaker_hints: JSON.stringify([]),
     });
 
-    upsertSpeakerAssignment(
+    const changed = upsertSpeakerAssignment(
       store,
       "transcript-1",
       remoteSpeakerKey(0),
@@ -289,6 +291,7 @@ describe("upsertSpeakerAssignment", () => {
       { contactId: "contact:alice" },
     );
 
+    expect(changed).toBe(true);
     expect(
       JSON.parse(
         store.getCell("transcripts", "transcript-1", "speaker_hints") as string,
@@ -306,5 +309,51 @@ describe("upsertSpeakerAssignment", () => {
         }),
       },
     ]);
+  });
+
+  it("does not rewrite an unchanged user speaker assignment", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "anchor-word",
+          text: " hello",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([
+        {
+          id: "anchor-word:user_speaker_assignment",
+          word_id: "anchor-word",
+          type: "user_speaker_assignment",
+          value: JSON.stringify({
+            human_id: "alice",
+            contact_id: "contact:alice",
+            channel: 1,
+            speaker_index: 0,
+          }),
+        },
+      ]),
+    });
+    const before = store.getCell(
+      "transcripts",
+      "transcript-1",
+      "speaker_hints",
+    );
+
+    const changed = upsertSpeakerAssignment(
+      store,
+      "transcript-1",
+      remoteSpeakerKey(0),
+      "alice",
+      "anchor-word",
+      { contactId: "contact:alice" },
+    );
+
+    expect(changed).toBe(false);
+    expect(store.getCell("transcripts", "transcript-1", "speaker_hints")).toBe(
+      before,
+    );
   });
 });

@@ -9,9 +9,21 @@ import type {
 import { getServerUrl } from "~/services/meeting-transcript-upload/queue";
 import { getSessionEventById } from "~/session/utils";
 import { DEFAULT_USER_ID, id } from "~/shared/utils";
+import { parseTranscriptWords, upsertSpeakerAssignment } from "~/stt/utils";
 
 type ParticipantEnrichmentStore = Parameters<typeof getSessionEventById>[0] & {
   getValue(valueId: "user_id"): unknown;
+  getCell(
+    tableId: "transcripts",
+    rowId: string,
+    cellId: "words" | "speaker_hints",
+  ): unknown;
+  setCell(
+    tableId: "transcripts",
+    rowId: string,
+    cellId: "words" | "speaker_hints",
+    value: string,
+  ): void;
   transaction(callback: () => void): void;
   setRow(
     tableId: "mapping_session_participant",
@@ -31,6 +43,7 @@ const REQUEST_TIMEOUT_MS = 10 * 1000;
 const PARTICIPANTS_RESOLVE_PATH = "/api/orchestrator/participants/resolve";
 
 type DigitalBrainParticipantInfo = {
+  contactId: string | null;
   name: string | null;
   aliases: string[];
   emails: string[];
@@ -276,6 +289,7 @@ function parseParticipantInfoResponse(
       }
 
       return {
+        contactId: readString(record.contact_id),
         name: readString(record.name) ?? readString(record.display_name),
         aliases: uniqueStrings([
           ...readStringArray(record.aliases),
@@ -323,6 +337,7 @@ function applyParticipantInfo(
 
       if (isCurrentUser) {
         upsertCurrentUserHuman(store, userId, info, currentUserEmail);
+        seedCurrentUserSpeakerAssignment(store, sessionId, userId, info);
         for (const email of info.emails) {
           humansByEmail.set(email, userId);
         }
@@ -355,6 +370,45 @@ function applyParticipantInfo(
         }
       }
     }
+  });
+}
+
+function seedCurrentUserSpeakerAssignment(
+  store: ParticipantEnrichmentStore,
+  sessionId: string,
+  userId: string,
+  info: DigitalBrainParticipantInfo,
+) {
+  const contactId = info.contactId?.trim();
+  if (!contactId) {
+    return;
+  }
+
+  store.forEachRow("transcripts", (transcriptId, _forEachCell) => {
+    const transcript = store.getRow("transcripts", transcriptId);
+    if (transcript?.session_id !== sessionId) {
+      return;
+    }
+
+    const anchorWord = parseTranscriptWords(store, transcriptId).find(
+      (word) => word.channel === 0,
+    );
+    if (!anchorWord?.id) {
+      return;
+    }
+
+    upsertSpeakerAssignment(
+      store,
+      transcriptId,
+      {
+        channel: "DirectMic",
+        speaker_index: null,
+        speaker_human_id: null,
+      },
+      userId,
+      anchorWord.id,
+      { contactId },
+    );
   });
 }
 

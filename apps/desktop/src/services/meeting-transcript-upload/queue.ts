@@ -59,6 +59,14 @@ export async function enqueueMeetingTranscriptUpload({
     log("enqueue_skipped_no_payload", { sessionId, force });
     return null;
   }
+  if (!hasIdentifiedSpeakers(payload)) {
+    log("enqueue_skipped_unidentified_speakers", {
+      sessionId,
+      force,
+      unresolvedSpeakers: getUnidentifiedSpeakerIds(payload),
+    });
+    return null;
+  }
 
   const now = new Date().toISOString();
   const status: DigitalBrainUploadStatus = getServerUrl()
@@ -81,6 +89,38 @@ export async function enqueueMeetingTranscriptUpload({
           ),
         ),
       );
+  }
+
+  if (!force) {
+    const existingRows = await db
+      .select()
+      .from(meetingTranscriptUploadQueue)
+      .where(
+        and(
+          eq(meetingTranscriptUploadQueue.sessionId, sessionId),
+          eq(
+            meetingTranscriptUploadQueue.transcriptHash,
+            payload.transcript_hash,
+          ),
+        ),
+      )
+      .limit(1);
+    const existing = existingRows[0];
+    if (existing) {
+      log("enqueue_skipped_existing", {
+        sessionId,
+        uploadId: payload.upload_id,
+        transcriptHash: payload.transcript_hash,
+        existingId: existing.id,
+        existingStatus: existing.status,
+        existingAttemptCount: existing.attemptCount,
+        existingNextAttemptAt: existing.nextAttemptAt,
+        existingSentAt: existing.sentAt,
+        existingServerId: existing.serverId,
+        existingLastError: truncate(existing.lastError),
+      });
+      return payload;
+    }
   }
 
   await db
@@ -321,6 +361,20 @@ export class MeetingTranscriptUploadService {
       }
     }
 
+    if (!hasIdentifiedSpeakers(payload)) {
+      log("process_row_skip_unidentified_speakers", {
+        id: row.id,
+        sessionId: row.sessionId,
+        unresolvedSpeakers: getUnidentifiedSpeakerIds(payload),
+      });
+      await markRow(row.id, {
+        status: "pending",
+        lastError: "Speaker identification is required before upload.",
+        nextAttemptAt: nextAttemptAt(row.attemptCount + 1),
+      });
+      return;
+    }
+
     try {
       log("post_start", {
         id: row.id,
@@ -510,6 +564,19 @@ export function getServerUrl() {
 
 function postEndpoint(serverUrl: string) {
   return `${serverUrl}/api/orchestrator/ingest/meetings/transcript`;
+}
+
+function hasIdentifiedSpeakers(payload: DigitalBrainTranscriptionPayload) {
+  return getUnidentifiedSpeakerIds(payload).length === 0;
+}
+
+function getUnidentifiedSpeakerIds(payload: DigitalBrainTranscriptionPayload) {
+  return payload.speaker_identities.flatMap((speaker) => {
+    if (speaker.identity.contact_id) {
+      return [];
+    }
+    return [speaker.id];
+  });
 }
 
 function log(event: string, data?: Record<string, unknown>) {

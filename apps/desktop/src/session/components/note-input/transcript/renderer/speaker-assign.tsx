@@ -40,13 +40,22 @@ export function SpeakerAssignPopover({
       if (!store || segment.words.length === 0) return;
       const anchorWordId = segment.words[0].id;
       if (!anchorWordId) return;
-      upsertSpeakerAssignment(
+      const changed = upsertSpeakerAssignment(
         store,
         transcriptId,
         segment.key,
         humanId,
         anchorWordId,
       );
+      if (!changed) {
+        console.info("[speaker-assign] assignment skipped unchanged", {
+          transcriptId,
+          sessionId,
+          humanId,
+        });
+        setOpen(false);
+        return;
+      }
       getMeetingTranscriptUploadService()?.scheduleSpeakerAssignmentUpload(
         sessionId,
       );

@@ -198,6 +198,104 @@ describe("buildDigitalBrainTranscriptionPayload", () => {
     });
   });
 
+  it("includes meeting identity and stable contact assignments in the transcript hash", () => {
+    const buildStore = ({
+      title = "Call",
+      name = "Alice",
+      email = "alice@example.com",
+      contactId = "contact:alice",
+      channel = 1,
+    }: {
+      title?: string;
+      name?: string;
+      email?: string;
+      contactId?: string;
+      channel?: number;
+    }) =>
+      createStore(
+        {
+          sessions: {
+            "session-1": {
+              title,
+              created_at: "2026-06-01T09:55:00Z",
+            },
+          },
+          events: {},
+          calendars: {},
+          humans: {
+            "human-1": {
+              name,
+              email,
+            },
+          },
+          mapping_session_participant: {
+            "mapping-1": {
+              session_id: "session-1",
+              human_id: "human-1",
+              source: "manual",
+            },
+          },
+          transcripts: {
+            "transcript-1": {
+              session_id: "session-1",
+              user_id: "user-1",
+              created_at: "2026-06-01T10:00:00Z",
+              started_at: 1780308000000,
+              words: JSON.stringify([word("word-1", 1)]),
+              speaker_hints: JSON.stringify([
+                {
+                  id: "word-1:provider",
+                  word_id: "word-1",
+                  type: "provider_speaker_index",
+                  value: JSON.stringify({ channel, speaker_index: 2 }),
+                },
+                {
+                  id: "word-1:user",
+                  word_id: "word-1",
+                  type: "user_speaker_assignment",
+                  value: JSON.stringify({
+                    human_id: "human-1",
+                    contact_id: contactId,
+                  }),
+                },
+              ]),
+              memo_md: "",
+            },
+          },
+        },
+        { user_id: "user-1" },
+      );
+
+    const baseHash = buildDigitalBrainTranscriptionPayload({
+      store: buildStore({}),
+      sessionId: "session-1",
+    })?.transcript_hash;
+    const renamedHash = buildDigitalBrainTranscriptionPayload({
+      store: buildStore({
+        name: "Alice Renamed",
+        email: "alice.renamed@example.com",
+      }),
+      sessionId: "session-1",
+    })?.transcript_hash;
+    const changedContactHash = buildDigitalBrainTranscriptionPayload({
+      store: buildStore({ contactId: "contact:bob" }),
+      sessionId: "session-1",
+    })?.transcript_hash;
+    const changedChannelHash = buildDigitalBrainTranscriptionPayload({
+      store: buildStore({ channel: 2 }),
+      sessionId: "session-1",
+    })?.transcript_hash;
+    const changedTitleHash = buildDigitalBrainTranscriptionPayload({
+      store: buildStore({ title: "Different call" }),
+      sessionId: "session-1",
+    })?.transcript_hash;
+
+    expect(renamedHash).toBe(baseHash);
+    expect(changedChannelHash).toBe(baseHash);
+    expect(changedContactHash).not.toBe(baseHash);
+    expect(changedTitleHash).not.toBe(baseHash);
+  });
+
   it("uses the session time and transcript duration when a session has no calendar event start", () => {
     const store = createStore(
       {

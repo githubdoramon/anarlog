@@ -185,8 +185,30 @@ export function buildDigitalBrainTranscriptionPayload({
       text: segment.text,
     })),
   };
+  const meeting: DigitalBrainTranscriptionPayload["meeting"] = {
+    original_id:
+      provider === "google" && typeof sessionEvent?.tracking_id === "string"
+        ? sessionEvent.tracking_id
+        : provider == null
+          ? sessionId
+          : null,
+    provider: provider ?? "hyprnote",
+    title:
+      stringOrNull(sessionEvent?.title) ?? stringOrNull(session?.title) ?? "",
+    description:
+      stringOrNull(sessionEvent?.description) ??
+      stringOrNull(event?.description),
+    started_at: meetingStartedAt,
+    ended_at: meetingEndedAt,
+  };
   const transcriptHash = hashString(
-    stableStringify({ speaker_identities: speakerIdentities, transcript }),
+    stableStringify(
+      buildTranscriptHashInput({
+        meeting,
+        speakerIdentities,
+        transcript,
+      }),
+    ),
   );
   const uploadId = `${sessionId}:${transcriptHash}`;
 
@@ -194,25 +216,35 @@ export function buildDigitalBrainTranscriptionPayload({
     upload_id: uploadId,
     session_id: sessionId,
     transcript_hash: transcriptHash,
-    meeting: {
-      original_id:
-        provider === "google" && typeof sessionEvent?.tracking_id === "string"
-          ? sessionEvent.tracking_id
-          : provider == null
-            ? sessionId
-            : null,
-      provider: provider ?? "hyprnote",
-      title:
-        stringOrNull(sessionEvent?.title) ?? stringOrNull(session?.title) ?? "",
-      description:
-        stringOrNull(sessionEvent?.description) ??
-        stringOrNull(event?.description),
-      started_at: meetingStartedAt,
-      ended_at: meetingEndedAt,
-    },
+    meeting,
     participants,
     speaker_identities: speakerIdentities,
     transcript,
+  };
+}
+
+function buildTranscriptHashInput({
+  meeting,
+  speakerIdentities,
+  transcript,
+}: {
+  meeting: DigitalBrainTranscriptionPayload["meeting"];
+  speakerIdentities: DigitalBrainSpeakerIdentity[];
+  transcript: DigitalBrainTranscriptionPayload["transcript"];
+}) {
+  return {
+    meeting: {
+      title: meeting.title,
+      original_id: meeting.original_id,
+      provider: meeting.provider,
+      started_at: meeting.started_at,
+      ended_at: meeting.ended_at,
+    },
+    transcript,
+    speaker_identities: speakerIdentities.map((identity) => ({
+      speaker_index: identity.speaker.speaker_index,
+      contact_id: identity.identity.contact_id ?? null,
+    })),
   };
 }
 

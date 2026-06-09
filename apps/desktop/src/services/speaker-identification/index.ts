@@ -175,6 +175,12 @@ export class SpeakerIdentificationService {
     const serverUrl = getServerUrl();
     const headers = await this.deps.getAuthHeaders();
     if (!serverUrl || !headers || !audioPath) {
+      console.info("[speaker-id] match skipped missing prerequisites", {
+        sessionId,
+        hasServerUrl: !!serverUrl,
+        hasHeaders: !!headers,
+        hasAudioPath: !!audioPath,
+      });
       return null;
     }
 
@@ -184,6 +190,7 @@ export class SpeakerIdentificationService {
       currentUserEmail: this.deps.getCurrentUserEmail(),
     });
     if (!payload) {
+      console.info("[speaker-id] match skipped no payload", { sessionId });
       return null;
     }
 
@@ -191,7 +198,10 @@ export class SpeakerIdentificationService {
       this.deps.store,
       sessionId,
     );
-    if (!baseStartedAt) {
+    if (baseStartedAt == null) {
+      console.info("[speaker-id] match skipped no transcript base time", {
+        sessionId,
+      });
       return null;
     }
 
@@ -201,6 +211,15 @@ export class SpeakerIdentificationService {
       baseStartedAt,
     );
     if (windows.length === 0) {
+      console.info("[speaker-id] match skipped no embedding windows", {
+        sessionId,
+        speakerCount: payload.speaker_identities.length,
+        segmentCount: payload.transcript.segments.length,
+        windowStats: summarizeEmbeddingWindowInputs(
+          payload.speaker_identities,
+          payload.transcript.segments,
+        ),
+      });
       return null;
     }
 
@@ -231,6 +250,10 @@ export class SpeakerIdentificationService {
       baseStartedAt,
     );
     if (speakerObservations.length === 0) {
+      console.info("[speaker-id] match skipped no speaker observations", {
+        sessionId,
+        embeddingCount: observations.length,
+      });
       return null;
     }
 
@@ -259,11 +282,19 @@ export class SpeakerIdentificationService {
     const serverUrl = getServerUrl();
     const headers = await this.deps.getAuthHeaders();
     if (!serverUrl || !headers) {
+      console.info("[speaker-id] confirmation skipped missing prerequisites", {
+        sessionId,
+        hasServerUrl: !!serverUrl,
+        hasHeaders: !!headers,
+      });
       return null;
     }
 
     const audioPath = await resolveAudioPath(sessionId);
     if (!audioPath) {
+      console.info("[speaker-id] confirmation skipped missing audio", {
+        sessionId,
+      });
       return null;
     }
 
@@ -273,6 +304,9 @@ export class SpeakerIdentificationService {
       currentUserEmail: this.deps.getCurrentUserEmail(),
     });
     if (!payload) {
+      console.info("[speaker-id] confirmation skipped no payload", {
+        sessionId,
+      });
       return null;
     }
 
@@ -280,6 +314,14 @@ export class SpeakerIdentificationService {
       isConfirmableSpeaker(speaker, options),
     );
     if (confirmedSpeakers.length === 0) {
+      console.info(
+        "[speaker-id] confirmation skipped no confirmable speakers",
+        {
+          sessionId,
+          speakerCount: payload.speaker_identities.length,
+          includeAutoAssignments: options.includeAutoAssignments,
+        },
+      );
       return null;
     }
 
@@ -287,7 +329,13 @@ export class SpeakerIdentificationService {
       this.deps.store,
       sessionId,
     );
-    if (!baseStartedAt) {
+    if (baseStartedAt == null) {
+      console.info(
+        "[speaker-id] confirmation skipped no transcript base time",
+        {
+          sessionId,
+        },
+      );
       return null;
     }
 
@@ -302,6 +350,16 @@ export class SpeakerIdentificationService {
       baseStartedAt,
     );
     if (windows.length === 0) {
+      console.info("[speaker-id] confirmation skipped no embedding windows", {
+        sessionId,
+        confirmedSpeakerCount: confirmedSpeakers.length,
+        windowStats: summarizeEmbeddingWindowInputs(
+          confirmedSpeakers,
+          payload.transcript.segments.filter((segment) =>
+            confirmedSpeakerIds.has(segment.speaker_id),
+          ),
+        ),
+      });
       return null;
     }
 
@@ -332,6 +390,14 @@ export class SpeakerIdentificationService {
       observations,
     );
     if (confirmObservations.length === 0) {
+      console.info(
+        "[speaker-id] confirmation skipped no confirm observations",
+        {
+          sessionId,
+          confirmedSpeakerCount: confirmedSpeakers.length,
+          embeddingCount: observations.length,
+        },
+      );
       return null;
     }
 
@@ -428,6 +494,76 @@ function buildEmbeddingWindows(
       MAX_WINDOWS_PER_SPEAKER,
     ),
   );
+}
+
+function summarizeEmbeddingWindowInputs(
+  speakerIdentities: DigitalBrainSpeakerIdentity[],
+  segments: Array<{
+    speaker_id: string;
+    started_at: string | null;
+    ended_at: string | null;
+    text: string;
+  }>,
+) {
+  const speakerIds = new Set(speakerIdentities.map((speaker) => speaker.id));
+  const stats = new Map<
+    string,
+    {
+      segmentCount: number;
+      missingTimeCount: number;
+      tooShortCount: number;
+      eligibleCount: number;
+      maxDurationMs: number;
+      totalTimedDurationMs: number;
+    }
+  >();
+
+  for (const speaker of speakerIdentities) {
+    stats.set(speaker.id, {
+      segmentCount: 0,
+      missingTimeCount: 0,
+      tooShortCount: 0,
+      eligibleCount: 0,
+      maxDurationMs: 0,
+      totalTimedDurationMs: 0,
+    });
+  }
+
+  for (const segment of segments) {
+    if (!speakerIds.has(segment.speaker_id)) {
+      continue;
+    }
+    const stat = stats.get(segment.speaker_id);
+    if (!stat) {
+      continue;
+    }
+    stat.segmentCount += 1;
+    if (!segment.started_at || !segment.ended_at) {
+      stat.missingTimeCount += 1;
+      continue;
+    }
+    const startedAt = Date.parse(segment.started_at);
+    const endedAt = Date.parse(segment.ended_at);
+    if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) {
+      stat.missingTimeCount += 1;
+      continue;
+    }
+    const durationMs = Math.max(0, endedAt - startedAt);
+    stat.maxDurationMs = Math.max(stat.maxDurationMs, durationMs);
+    stat.totalTimedDurationMs += durationMs;
+    if (durationMs < MIN_WINDOW_MS) {
+      stat.tooShortCount += 1;
+    } else {
+      stat.eligibleCount += 1;
+    }
+  }
+
+  return [...stats.entries()].map(([speakerId, stat]) => ({
+    speakerId,
+    ...stat,
+    minWindowMs: MIN_WINDOW_MS,
+    maxWindowMs: MAX_WINDOW_MS,
+  }));
 }
 
 function voiceWindowId(

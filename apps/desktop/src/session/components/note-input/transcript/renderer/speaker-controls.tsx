@@ -38,6 +38,7 @@ import { upsertSpeakerAssignment } from "~/stt/utils";
 
 const REMOTE_CHANNEL = 1;
 const CONTACT_SEARCH_DEBOUNCE_MS = 250;
+const CONTACT_INGEST_PATH = "/api/orchestrator/ingest/contact";
 
 type AssignmentParticipant = {
   id: string;
@@ -50,6 +51,11 @@ type DigitalBrainContactSearchResult = {
   display_name: string | null;
   aliases: string[];
   emails: string[];
+};
+
+type DigitalBrainContactEnsureResult = {
+  contact_id: string;
+  created: boolean;
 };
 
 type SpeakerAssignmentMetadata = {
@@ -210,7 +216,7 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
         return;
       }
 
-      upsertSpeakerAssignment(
+      const changed = upsertSpeakerAssignment(
         store,
         transcriptId,
         {
@@ -222,6 +228,17 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
         anchorWordId,
         { contactId: metadata.contactId },
       );
+      if (!changed) {
+        console.info("[speaker-controls] assignment skipped unchanged", {
+          transcriptId,
+          sessionId,
+          channel,
+          speakerIndex,
+          humanId,
+          hasContactId: !!metadata.contactId,
+        });
+        return;
+      }
       getMeetingTranscriptUploadService()?.scheduleSpeakerAssignmentUpload(
         sessionId,
       );
@@ -436,6 +453,19 @@ function SpeakerAssignmentPicker({
     },
     enabled: open && debouncedQuery.length >= 2 && !!serverUrl && !!authHeaders,
   });
+  const ensureContact = useMutation({
+    mutationFn: async (email: string) => {
+      const session = await auth.refreshSession();
+      return ensureDigitalBrainContactForEmail(
+        email,
+        session
+          ? {
+              Authorization: `Bearer ${session.access_token}`,
+            }
+          : null,
+      );
+    },
+  });
 
   useEffect(() => {
     if (!open || debouncedQuery.length < 2) {
@@ -491,10 +521,21 @@ function SpeakerAssignmentPicker({
     if (!store || !sessionId || !isEmailLike(query)) {
       return;
     }
-    const humanId = ensureLocalParticipantForEmail(store, sessionId, query);
-    onAssign(humanId);
-    setOpen(false);
-  }, [onAssign, query, sessionId, store]);
+    const email = query.trim().toLowerCase();
+    ensureContact.mutate(email, {
+      onSuccess: (contact) => {
+        const humanId = ensureLocalParticipantForEmail(store, sessionId, email);
+        onAssign(humanId, { contactId: contact.contact_id });
+        setOpen(false);
+      },
+      onError: (error) => {
+        console.warn(
+          "[digital-brain] contact_ensure_error",
+          serializeError(error),
+        );
+      },
+    });
+  }, [ensureContact, onAssign, query, sessionId, store]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -540,7 +581,11 @@ function SpeakerAssignmentPicker({
               <AssignmentSection title="Manual email">
                 <AssignmentOption
                   title={query.trim().toLowerCase()}
-                  subtitle="Create participant and assign"
+                  subtitle={
+                    ensureContact.isPending
+                      ? "Creating contact..."
+                      : "Create contact and assign"
+                  }
                   onClick={handleAssignEmail}
                 />
               </AssignmentSection>
@@ -699,6 +744,52 @@ async function searchDigitalBrainContacts(
       },
     ];
   });
+}
+
+async function ensureDigitalBrainContactForEmail(
+  email: string,
+  authHeaders: { Authorization: string } | null,
+): Promise<DigitalBrainContactEnsureResult> {
+  const serverUrl = getServerUrl();
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!serverUrl || !authHeaders || !isEmailLike(normalizedEmail)) {
+    throw new Error("Digital Brain contact creation is unavailable.");
+  }
+
+  const response = await tauriFetch(`${serverUrl}${CONTACT_INGEST_PATH}`, {
+    method: "POST",
+    headers: {
+      ...authHeaders,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email: normalizedEmail,
+      display_name: nameFromEmail(normalizedEmail),
+    }),
+  });
+  console.info("[digital-brain] contact_ensure_response", {
+    path: CONTACT_INGEST_PATH,
+    status: response.status,
+    ok: response.ok,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`contact ensure returned ${response.status}: ${errorText}`);
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    contact_id?: unknown;
+    created?: unknown;
+  } | null;
+  const contactId = readString(body?.contact_id);
+  if (!contactId) {
+    throw new Error("contact ensure response did not include contact_id.");
+  }
+
+  return {
+    contact_id: contactId,
+    created: body?.created === true,
+  };
 }
 
 function ensureLocalParticipantForContact(

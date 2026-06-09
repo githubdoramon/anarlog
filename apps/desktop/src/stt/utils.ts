@@ -119,10 +119,11 @@ export function upsertSpeakerAssignment(
   humanId: string,
   anchorWordId: string,
   options: { contactId?: string | null } = {},
-): void {
+): boolean {
   const hints = parseTranscriptHints(store, transcriptId);
   const words = parseTranscriptWords(store, transcriptId);
   const wordsById = new Map(words.map((word) => [word.id, word]));
+  const contactId = options.contactId?.trim() || null;
   const channel =
     segmentKey.channel === "DirectMic"
       ? 0
@@ -143,11 +144,33 @@ export function upsertSpeakerAssignment(
     type: "user_speaker_assignment",
     value: JSON.stringify({
       human_id: humanId,
-      contact_id: options.contactId?.trim() || undefined,
+      contact_id: contactId || undefined,
       channel,
       speaker_index: nextScope.speakerIndex,
     }),
   };
+
+  const conflictingHints = hints.filter((hint) => {
+    if (
+      hint.type !== "user_speaker_assignment" &&
+      hint.type !== "voice_auto_assignment"
+    ) {
+      return false;
+    }
+    const hintScope = getSpeakerAssignmentScopeForHint(hints, wordsById, hint);
+    return !!hintScope && speakerAssignmentScopesConflict(hintScope, nextScope);
+  });
+  if (
+    conflictingHints.length === 1 &&
+    isSameUserSpeakerAssignment(conflictingHints[0], {
+      humanId,
+      contactId,
+      channel,
+      speakerIndex: nextScope.speakerIndex,
+    })
+  ) {
+    return false;
+  }
 
   const nextHints = hints.filter((hint) => {
     if (
@@ -171,6 +194,7 @@ export function upsertSpeakerAssignment(
 
   nextHints.push(newHint);
   updateTranscriptHints(store, transcriptId, nextHints);
+  return true;
 }
 
 type SpeakerAssignmentScope = {
@@ -265,6 +289,73 @@ function parseUserSpeakerAssignmentScope(
       "channel" in value && typeof value.channel === "number"
         ? value.channel
         : undefined,
+    speakerIndex:
+      "speaker_index" in value && typeof value.speaker_index === "number"
+        ? value.speaker_index
+        : null,
+  };
+}
+
+function isSameUserSpeakerAssignment(
+  hint: SpeakerHintWithId,
+  expected: {
+    humanId: string;
+    contactId: string | null;
+    channel: number;
+    speakerIndex: number | null;
+  },
+) {
+  if (hint.type !== "user_speaker_assignment") {
+    return false;
+  }
+
+  const value = parseSpeakerAssignmentValue(hint);
+  if (!value) {
+    return false;
+  }
+
+  return (
+    value.humanId === expected.humanId &&
+    value.contactId === expected.contactId &&
+    value.channel === expected.channel &&
+    value.speakerIndex === expected.speakerIndex
+  );
+}
+
+function parseSpeakerAssignmentValue(hint: SpeakerHintWithId): {
+  humanId: string | null;
+  contactId: string | null;
+  channel: number | null;
+  speakerIndex: number | null;
+} | null {
+  const value =
+    typeof hint.value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(hint.value);
+          } catch {
+            return undefined;
+          }
+        })()
+      : hint.value;
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  return {
+    humanId:
+      "human_id" in value && typeof value.human_id === "string"
+        ? value.human_id
+        : null,
+    contactId:
+      "contact_id" in value && typeof value.contact_id === "string"
+        ? value.contact_id.trim() || null
+        : null,
+    channel:
+      "channel" in value && typeof value.channel === "number"
+        ? value.channel
+        : null,
     speakerIndex:
       "speaker_index" in value && typeof value.speaker_index === "number"
         ? value.speaker_index
