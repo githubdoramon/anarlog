@@ -110,6 +110,64 @@ function createStore(participantIds = ["self", "remote"]): FakeStore {
         },
       ]),
     },
+    assignedExplicitNullRemoteScope: {
+      session_id: "session-1",
+      started_at: 4_000,
+      words: JSON.stringify([
+        {
+          id: "explicit-null-word",
+          text: " explicit null",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([
+        {
+          word_id: "explicit-null-word",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 2 }),
+        },
+        {
+          word_id: "explicit-null-word",
+          type: "user_speaker_assignment",
+          value: JSON.stringify({
+            human_id: "remote",
+            channel: 1,
+            speaker_index: null,
+          }),
+        },
+      ]),
+    },
+    assignedExplicitNullDirectScope: {
+      session_id: "session-1",
+      started_at: 5_000,
+      words: JSON.stringify([
+        {
+          id: "direct-word",
+          text: " direct",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 0,
+        },
+      ]),
+      speaker_hints: JSON.stringify([
+        {
+          word_id: "direct-word",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 0, speaker_index: 2 }),
+        },
+        {
+          word_id: "direct-word",
+          type: "user_speaker_assignment",
+          value: JSON.stringify({
+            human_id: "self",
+            channel: 0,
+            speaker_index: null,
+          }),
+        },
+      ]),
+    },
   } as const;
 
   const humans = {
@@ -236,6 +294,41 @@ describe("buildRenderTranscriptRequestFromStore", () => {
           kind: "channel_speaker",
           channel: "RemoteParty",
           speaker_index: 0,
+        },
+      },
+    ]);
+  });
+
+  it("scopes explicit null remote assignments to the provider speaker when available", () => {
+    const request = buildRenderTranscriptRequestFromStore(
+      createStore() as never,
+      ["assignedExplicitNullRemoteScope"],
+    );
+
+    expect(request?.transcripts[0]?.assignments).toEqual([
+      {
+        human_id: "remote",
+        scope: {
+          kind: "channel_speaker",
+          channel: "RemoteParty",
+          speaker_index: 2,
+        },
+      },
+    ]);
+  });
+
+  it("keeps explicit null direct mic assignments scoped to the channel", () => {
+    const request = buildRenderTranscriptRequestFromStore(
+      createStore() as never,
+      ["assignedExplicitNullDirectScope"],
+    );
+
+    expect(request?.transcripts[0]?.assignments).toEqual([
+      {
+        human_id: "self",
+        scope: {
+          kind: "channel",
+          channel: "DirectMic",
         },
       },
     ]);

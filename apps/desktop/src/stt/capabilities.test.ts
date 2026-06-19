@@ -112,13 +112,13 @@ describe("getLiveTranscriptionConfig", () => {
 });
 
 describe("getTranscriptionLanguages", () => {
-  test("prefers the main language before additional spoken languages", () => {
-    expect(getTranscriptionLanguages("en", ["ko"])).toEqual(["en", "ko"]);
+  test("prefers additional spoken languages before the main language", () => {
+    expect(getTranscriptionLanguages("en", ["ko"])).toEqual(["ko", "en"]);
   });
 
   test("deduplicates regional variants by base language", () => {
     expect(getTranscriptionLanguages("en-US", ["en", "ko"])).toEqual([
-      "en-US",
+      "en",
       "ko",
     ]);
   });

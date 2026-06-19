@@ -159,12 +159,38 @@ export const useRunBatch = (sessionId: string) => {
           ? undefined
           : defaultSpeakerBounds?.maxSpeakers);
 
+      console.info("[stt-batch] run requested", {
+        sessionId,
+        provider,
+        providerId,
+        modelId,
+        hasFilePath: !!filePath,
+        requestedNumSpeakers: options?.numSpeakers ?? null,
+        requestedMinSpeakers: options?.minSpeakers ?? null,
+        requestedMaxSpeakers: options?.maxSpeakers ?? null,
+        defaultSpeakerBounds,
+        finalNumSpeakers: numSpeakers ?? null,
+        finalMinSpeakers: options?.minSpeakers ?? null,
+        finalMaxSpeakers: maxSpeakers ?? null,
+        languages:
+          options?.languages ??
+          getTranscriptionLanguages(aiLanguage, spokenLanguages),
+      });
+
       const handlePersist: BatchPersistCallback | undefined =
         options?.handlePersist;
 
       const persist =
         handlePersist ??
         ((words, hints) => {
+          console.info("[stt-batch] persist callback received", {
+            sessionId,
+            transcriptId,
+            wordCount: words.length,
+            hintCount: hints.length,
+            input: summarizeBatchPersistInput(words, hints),
+          });
+
           if (words.length === 0) {
             return;
           }
@@ -195,6 +221,11 @@ export const useRunBatch = (sessionId: string) => {
               }
 
               store.setRow("transcripts", currentTranscriptId, transcriptRow);
+            });
+
+            console.info("[stt-batch] transcript replaced", {
+              sessionId,
+              transcriptId: currentTranscriptId,
             });
           }
 
@@ -265,14 +296,23 @@ export const useRunBatch = (sessionId: string) => {
             newHints.push(selfAssignmentHint);
           }
 
-          updateTranscriptWords(store, currentTranscriptId, [
-            ...existingWords,
-            ...newWords,
-          ]);
-          updateTranscriptHints(store, currentTranscriptId, [
-            ...existingHints,
-            ...newHints,
-          ]);
+          const nextWords = [...existingWords, ...newWords];
+          const nextHints = [...existingHints, ...newHints];
+          console.info("[stt-batch] persist writing transcript", {
+            sessionId,
+            transcriptId: currentTranscriptId,
+            existingWordCount: existingWords.length,
+            newWordCount: newWords.length,
+            nextWordCount: nextWords.length,
+            existingHintCount: existingHints.length,
+            newHintCount: newHints.length,
+            nextHintCount: nextHints.length,
+            selfAssignmentCreated: !!selfAssignmentHint,
+            hints: summarizeSpeakerHints(nextHints),
+          });
+
+          updateTranscriptWords(store, currentTranscriptId, nextWords);
+          updateTranscriptHints(store, currentTranscriptId, nextHints);
         });
 
       const params: TranscriptionParams = {
@@ -292,6 +332,10 @@ export const useRunBatch = (sessionId: string) => {
       };
 
       await startTranscription(params, { handlePersist: persist });
+      console.info("[stt-batch] run completed", {
+        sessionId,
+        transcriptId,
+      });
       void getMeetingTranscriptUploadService()?.enqueueSession(sessionId);
     },
     [
@@ -468,6 +512,103 @@ function hasDirectMicSpeakerAssignment(hints: SpeakerHintWithId[]) {
       (value as { channel?: unknown }).channel === DIRECT_MIC_CHANNEL
     );
   });
+}
+
+function summarizeBatchPersistInput(
+  words: Array<{ channel?: number }>,
+  hints: Array<{
+    wordIndex: number;
+    data: {
+      type: string;
+      provider?: string;
+      channel?: number;
+      speaker_index?: number;
+    };
+  }>,
+) {
+  const channels = new Map<number | string, number>();
+  for (const word of words) {
+    const channel = typeof word.channel === "number" ? word.channel : "unknown";
+    channels.set(channel, (channels.get(channel) ?? 0) + 1);
+  }
+
+  const providerSpeakers = new Map<string, number>();
+  for (const hint of hints) {
+    if (hint.data.type !== "provider_speaker_index") {
+      continue;
+    }
+    const word = words[hint.wordIndex];
+    const channel =
+      typeof hint.data.channel === "number"
+        ? hint.data.channel
+        : typeof word?.channel === "number"
+          ? word.channel
+          : "unknown";
+    const speakerIndex =
+      typeof hint.data.speaker_index === "number"
+        ? hint.data.speaker_index
+        : "unknown";
+    const key = `${channel}:${speakerIndex}`;
+    providerSpeakers.set(key, (providerSpeakers.get(key) ?? 0) + 1);
+  }
+
+  return {
+    channels: Object.fromEntries(channels),
+    providerSpeakers: Object.fromEntries(providerSpeakers),
+  };
+}
+
+function summarizeSpeakerHints(hints: SpeakerHintWithId[]) {
+  const byType = new Map<string, number>();
+  const providerSpeakers = new Map<string, number>();
+  const assignments: Array<{
+    type: string;
+    wordId: string | null;
+    humanId: string | null;
+    contactId: string | null;
+    channel: number | null;
+    speakerIndex: number | null;
+  }> = [];
+
+  for (const hint of hints) {
+    const hintType = hint.type ?? "unknown";
+    byType.set(hintType, (byType.get(hintType) ?? 0) + 1);
+    const value = parseHintValue(hint.value);
+    if (hint.type === "provider_speaker_index" && isRecord(value)) {
+      const channel = typeof value.channel === "number" ? value.channel : null;
+      const speakerIndex =
+        typeof value.speaker_index === "number" ? value.speaker_index : null;
+      const key = `${channel ?? "unknown"}:${speakerIndex ?? "unknown"}`;
+      providerSpeakers.set(key, (providerSpeakers.get(key) ?? 0) + 1);
+      continue;
+    }
+    if (
+      (hint.type === "user_speaker_assignment" ||
+        hint.type === "voice_auto_assignment") &&
+      isRecord(value)
+    ) {
+      assignments.push({
+        type: hint.type,
+        wordId: typeof hint.word_id === "string" ? hint.word_id : null,
+        humanId: typeof value.human_id === "string" ? value.human_id : null,
+        contactId:
+          typeof value.contact_id === "string" ? value.contact_id : null,
+        channel: typeof value.channel === "number" ? value.channel : null,
+        speakerIndex:
+          typeof value.speaker_index === "number" ? value.speaker_index : null,
+      });
+    }
+  }
+
+  return {
+    byType: Object.fromEntries(byType),
+    providerSpeakers: Object.fromEntries(providerSpeakers),
+    assignments,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function parseHintValue(value: unknown): unknown {

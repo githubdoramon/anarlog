@@ -33,7 +33,9 @@ export function UploadDigitalBrainPayload({
 
       const payload = await service.forceUploadSession(sessionId);
       if (!payload) {
-        throw new Error("No transcript payload is available.");
+        throw new Error(
+          "Digital Brain upload could not be queued. Check the meeting-transcript-upload logs for the skipped reason.",
+        );
       }
 
       return payload;

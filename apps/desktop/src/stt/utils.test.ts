@@ -268,6 +268,60 @@ describe("upsertSpeakerAssignment", () => {
     ]);
   });
 
+  it("derives speaker scope from the anchor word when the segment key is collapsed", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "anchor-word",
+          text: " hello",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([
+        {
+          id: "anchor-word:provider_speaker_index",
+          word_id: "anchor-word",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 2 }),
+        },
+      ]),
+    });
+
+    const changed = upsertSpeakerAssignment(
+      store,
+      "transcript-1",
+      remoteSpeakerKey(null),
+      "alice",
+      "anchor-word",
+    );
+
+    expect(changed).toBe(true);
+    expect(
+      JSON.parse(
+        store.getCell("transcripts", "transcript-1", "speaker_hints") as string,
+      ),
+    ).toEqual([
+      {
+        id: "anchor-word:provider_speaker_index",
+        word_id: "anchor-word",
+        type: "provider_speaker_index",
+        value: JSON.stringify({ channel: 1, speaker_index: 2 }),
+      },
+      {
+        id: "anchor-word:user_speaker_assignment",
+        word_id: "anchor-word",
+        type: "user_speaker_assignment",
+        value: JSON.stringify({
+          human_id: "alice",
+          channel: 1,
+          speaker_index: 2,
+        }),
+      },
+    ]);
+  });
+
   it("stores backend contact id when provided", () => {
     const store = createStore({
       words: JSON.stringify([

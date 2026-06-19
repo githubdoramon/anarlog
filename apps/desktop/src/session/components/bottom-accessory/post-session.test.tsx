@@ -143,10 +143,34 @@ describe("PostSessionAccessory", () => {
 
     await waitFor(() => {
       expect(audioPathMock).toHaveBeenCalledWith("session-1");
-      expect(runBatchMock).toHaveBeenCalledWith("/tmp/session.wav");
+      expect(runBatchMock).toHaveBeenCalledWith("/tmp/session.wav", {
+        numSpeakers: 2,
+      });
     });
 
     expect(handleBatchFailedMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the selected remote speaker count when regenerating", async () => {
+    render(
+      <PostSessionAccessory
+        sessionId="session-1"
+        hasAudio
+        hasTranscript
+        isTranscriptExpanded
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Increase remote speakers" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+
+    await waitFor(() => {
+      expect(runBatchMock).toHaveBeenCalledWith("/tmp/session.wav", {
+        numSpeakers: 3,
+      });
+    });
   });
 
   it("shows Generate button in empty panel when audio is present but screen state is not 'empty'", async () => {
@@ -169,7 +193,9 @@ describe("PostSessionAccessory", () => {
     fireEvent.click(screen.getByRole("button", { name: /Generate/ }));
 
     await waitFor(() => {
-      expect(runBatchMock).toHaveBeenCalledWith("/tmp/session.wav");
+      expect(runBatchMock).toHaveBeenCalledWith("/tmp/session.wav", {
+        numSpeakers: 2,
+      });
     });
   });
 

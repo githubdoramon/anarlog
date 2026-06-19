@@ -117,7 +117,8 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
   const canApplyCurrentTranscript = speakerStats.length > 0;
   const suggestedSpeakerCount = Math.max(
     1,
-    expectedCount ?? detectedSpeakerCount,
+    detectedSpeakerCount,
+    expectedCount ?? 0,
   );
 
   useEffect(() => {
@@ -129,6 +130,41 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
       setSpeakerCount(suggestedSpeakerCount);
     }
   }, [hasEditedSpeakerCount, suggestedSpeakerCount]);
+
+  useEffect(() => {
+    console.info("[speaker-controls] stats computed", {
+      transcriptId,
+      sessionId: sessionId ?? null,
+      expectedCount: expectedCount ?? null,
+      detectedSpeakerCount,
+      speakerCount,
+      hasEditedSpeakerCount,
+      directMicSpeaker: directMicSpeaker
+        ? {
+            wordCount: directMicSpeaker.wordCount,
+            durationMs: directMicSpeaker.durationMs,
+            anchorWordId: directMicSpeaker.anchorWordId,
+            assignedHumanId: directMicSpeaker.assignedHumanId ?? null,
+          }
+        : null,
+      remoteSpeakers: speakerStats.map((speaker) => ({
+        speakerIndex: speaker.speakerIndex,
+        wordCount: speaker.wordCount,
+        durationMs: speaker.durationMs,
+        anchorWordId: speaker.anchorWordId,
+        assignedHumanId: speaker.assignedHumanId ?? null,
+      })),
+    });
+  }, [
+    transcriptId,
+    sessionId,
+    expectedCount,
+    detectedSpeakerCount,
+    speakerCount,
+    hasEditedSpeakerCount,
+    directMicSpeaker,
+    speakerStats,
+  ]);
 
   const participants = useMemo(() => {
     if (!store || !sessionId) {
@@ -165,8 +201,19 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
         throw new Error("Missing session.");
       }
 
+      console.info("[speaker-controls] reprocess starting", {
+        sessionId,
+        transcriptId,
+        requestedNumSpeakers: speakerCount,
+      });
       const result = await fsSyncCommands.audioPath(sessionId);
       if (result.status === "error" || !result.data) {
+        console.info("[speaker-controls] reprocess audio path failed", {
+          sessionId,
+          transcriptId,
+          error:
+            result.status === "error" ? result.error : "Audio file not found.",
+        });
         throw new Error(
           result.status === "error" ? result.error : "Audio file not found.",
         );
@@ -174,6 +221,11 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
 
       await runBatch(result.data, {
         numSpeakers: speakerCount,
+      });
+      console.info("[speaker-controls] reprocess batch completed", {
+        sessionId,
+        transcriptId,
+        requestedNumSpeakers: speakerCount,
       });
     },
   });
@@ -183,6 +235,19 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
       return;
     }
 
+    console.info(
+      "[speaker-controls] applying speaker count to current transcript",
+      {
+        sessionId,
+        transcriptId,
+        requestedSpeakerCount: speakerCount,
+        before: speakerStats.map((speaker) => ({
+          speakerIndex: speaker.speakerIndex,
+          wordCount: speaker.wordCount,
+          assignedHumanId: speaker.assignedHumanId ?? null,
+        })),
+      },
+    );
     applyProviderSpeakerCount(
       store,
       transcriptId,
@@ -190,19 +255,6 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
       speakerCount,
     );
   }, [store, transcriptId, speakerCount, canApplyCurrentTranscript]);
-
-  useEffect(() => {
-    if (!store || !expectedCount || speakerStats.length <= expectedCount) {
-      return;
-    }
-
-    applyProviderSpeakerCount(
-      store,
-      transcriptId,
-      REMOTE_CHANNEL,
-      expectedCount,
-    );
-  }, [store, transcriptId, expectedCount, speakerStats.length]);
 
   const handleAssign = useCallback(
     (
@@ -216,6 +268,15 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
         return;
       }
 
+      console.info("[speaker-controls] assignment requested", {
+        transcriptId,
+        sessionId,
+        channel,
+        speakerIndex,
+        anchorWordId,
+        humanId,
+        hasContactId: !!metadata.contactId,
+      });
       const changed = upsertSpeakerAssignment(
         store,
         transcriptId,
@@ -239,6 +300,15 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
         });
         return;
       }
+      console.info("[speaker-controls] assignment applied", {
+        transcriptId,
+        sessionId,
+        channel,
+        speakerIndex,
+        anchorWordId,
+        humanId,
+        hasContactId: !!metadata.contactId,
+      });
       getMeetingTranscriptUploadService()?.scheduleSpeakerAssignmentUpload(
         sessionId,
       );
@@ -840,6 +910,30 @@ function ensureLocalParticipant(
       memo: "",
       pinned: false,
     } satisfies HumanStorage);
+  } else {
+    const human = store.getRow("humans", humanId);
+    const nextName = participant.name.trim();
+    const nextEmail = normalizedEmail;
+    const patch: Partial<HumanStorage> = {};
+
+    if (nextName && human?.name !== nextName) {
+      patch.name = nextName;
+    }
+    if (nextEmail && human?.email !== nextEmail) {
+      patch.email = nextEmail;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      console.info("[digital-brain] local_contact_reconciled", {
+        sessionId,
+        humanId,
+        previousName: typeof human?.name === "string" ? human.name : null,
+        nextName: patch.name ?? null,
+        previousEmail: typeof human?.email === "string" ? human.email : null,
+        nextEmail: patch.email ?? null,
+      });
+      store.setPartialRow("humans", humanId, patch);
+    }
   }
 
   ensureSessionParticipantMapping(store, sessionId, humanId, userId);

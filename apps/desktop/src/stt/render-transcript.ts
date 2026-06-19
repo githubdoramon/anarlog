@@ -215,7 +215,9 @@ function normalizeSpeakerHint(
     const speakerIndex =
       typeof assignment.speaker_index === "number"
         ? assignment.speaker_index
-        : word.speaker_index;
+        : channel === 0
+          ? null
+          : word.speaker_index;
 
     return speakerIndex == null
       ? {

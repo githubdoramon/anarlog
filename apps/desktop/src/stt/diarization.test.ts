@@ -89,9 +89,9 @@ function createParticipantStore(
 }
 
 describe("getBatchSpeakerBounds", () => {
-  it("forces one speaker and caps multi-speaker calls", () => {
+  it("only caps multi-speaker calls", () => {
     expect(getBatchSpeakerBounds(undefined)).toEqual(undefined);
-    expect(getBatchSpeakerBounds(1)).toEqual({ numSpeakers: 1 });
+    expect(getBatchSpeakerBounds(1)).toEqual(undefined);
     expect(getBatchSpeakerBounds(3)).toEqual({ maxSpeakers: 3 });
   });
 });
@@ -227,6 +227,49 @@ describe("applyProviderSpeakerCount", () => {
         durationMs: 2100,
         anchorWordId: "dominant",
         assignedHumanId: "alice",
+      },
+    ]);
+  });
+
+  it("shows voice auto assignments in provider speaker stats", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "remote-word",
+          text: " bom dia",
+          start_ms: 0,
+          end_ms: 1000,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([
+        {
+          id: "remote-word:provider_speaker_index",
+          word_id: "remote-word",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 0 }),
+        },
+        {
+          id: "remote-word:voice_auto_assignment",
+          word_id: "remote-word",
+          type: "voice_auto_assignment",
+          value: JSON.stringify({
+            human_id: "hugo",
+            contact_id: "contact-hugo",
+            channel: 1,
+            speaker_index: 0,
+          }),
+        },
+      ]),
+    });
+
+    expect(getProviderSpeakerStats(store, "transcript-1", 1)).toEqual([
+      {
+        speakerIndex: 0,
+        wordCount: 1,
+        durationMs: 1000,
+        anchorWordId: "remote-word",
+        assignedHumanId: "hugo",
       },
     ]);
   });

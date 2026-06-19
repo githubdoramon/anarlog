@@ -1,11 +1,13 @@
 import {
   Loader2Icon,
+  MinusIcon,
   Pencil,
+  PlusIcon,
   RefreshCw,
   SquareIcon,
   TrashIcon,
 } from "lucide-react";
-import { type ReactNode, useCallback, useRef } from "react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
 
 import { commands as fsSyncCommands } from "@hypr/plugin-fs-sync";
 import { Button } from "@hypr/ui/components/ui/button";
@@ -137,40 +139,113 @@ function useRegenerateTranscript(sessionId: string) {
   const getSessionMode = useListener((state) => state.getSessionMode);
   const isStartingRef = useRef(false);
 
-  return useCallback(async () => {
-    if (
-      isStartingRef.current ||
-      getSessionMode(sessionId) === "running_batch"
-    ) {
-      return;
-    }
-
-    isStartingRef.current = true;
-    const result = await fsSyncCommands.audioPath(sessionId);
-    if (result.status === "error") {
-      isStartingRef.current = false;
-      return;
-    }
-
-    const audioPath = result.data;
-
-    try {
-      await runBatch(audioPath);
-      await getSpeakerIdentificationService()?.matchAndApplyBeforeEnhance(
-        sessionId,
-        audioPath,
-      );
-      getEnhancerService()?.queueAutoEnhanceIfSummaryEmpty(sessionId);
-    } catch (error) {
-      if (isStoppedTranscriptionError(error)) {
+  return useCallback(
+    async (options?: { numSpeakers?: number }) => {
+      if (
+        isStartingRef.current ||
+        getSessionMode(sessionId) === "running_batch"
+      ) {
+        console.info("[transcript-regenerate] skipped already running", {
+          sessionId,
+          isStarting: isStartingRef.current,
+          sessionMode: getSessionMode(sessionId),
+          requestedNumSpeakers: options?.numSpeakers ?? null,
+        });
         return;
       }
-      const msg = error instanceof Error ? error.message : String(error);
-      handleBatchFailed(sessionId, msg);
-    } finally {
-      isStartingRef.current = false;
-    }
-  }, [getSessionMode, handleBatchFailed, runBatch, sessionId]);
+
+      isStartingRef.current = true;
+      console.info("[transcript-regenerate] starting", {
+        sessionId,
+        requestedNumSpeakers: options?.numSpeakers ?? null,
+      });
+      const result = await fsSyncCommands.audioPath(sessionId);
+      if (result.status === "error") {
+        console.info("[transcript-regenerate] audio path failed", {
+          sessionId,
+          error: result.error,
+        });
+        isStartingRef.current = false;
+        return;
+      }
+
+      const audioPath = result.data;
+      console.info("[transcript-regenerate] audio path resolved", {
+        sessionId,
+        hasAudioPath: !!audioPath,
+        requestedNumSpeakers: options?.numSpeakers ?? null,
+      });
+
+      try {
+        await runBatch(audioPath, {
+          numSpeakers: options?.numSpeakers,
+        });
+        console.info("[transcript-regenerate] batch completed", {
+          sessionId,
+          requestedNumSpeakers: options?.numSpeakers ?? null,
+        });
+        await getSpeakerIdentificationService()?.matchAndApplyBeforeEnhance(
+          sessionId,
+          audioPath,
+        );
+        console.info("[transcript-regenerate] speaker match completed", {
+          sessionId,
+          requestedNumSpeakers: options?.numSpeakers ?? null,
+        });
+        getEnhancerService()?.queueAutoEnhanceIfSummaryEmpty(sessionId);
+      } catch (error) {
+        if (isStoppedTranscriptionError(error)) {
+          console.info("[transcript-regenerate] stopped", { sessionId });
+          return;
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        console.info("[transcript-regenerate] failed", {
+          sessionId,
+          error: msg,
+        });
+        handleBatchFailed(sessionId, msg);
+      } finally {
+        console.info("[transcript-regenerate] finished", { sessionId });
+        isStartingRef.current = false;
+      }
+    },
+    [getSessionMode, handleBatchFailed, runBatch, sessionId],
+  );
+}
+
+function RegenerateSpeakerControl({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+      <span className="text-neutral-400">Remote speakers</span>
+      <div className="flex h-6 items-center rounded-md border border-neutral-200 bg-white">
+        <button
+          type="button"
+          aria-label="Decrease remote speakers"
+          className="flex h-6 w-6 items-center justify-center text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700"
+          onClick={() => onChange(Math.max(1, value - 1))}
+        >
+          <MinusIcon className="size-3" />
+        </button>
+        <span className="w-6 text-center font-mono text-neutral-800">
+          {value}
+        </span>
+        <button
+          type="button"
+          aria-label="Increase remote speakers"
+          className="flex h-6 w-6 items-center justify-center text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700"
+          onClick={() => onChange(Math.min(12, value + 1))}
+        >
+          <PlusIcon className="size-3" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function BatchingTranscriptPanel({
@@ -352,6 +427,7 @@ function TranscriptReadyPanel({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const regenerate = useRegenerateTranscript(sessionId);
+  const [remoteSpeakerCount, setRemoteSpeakerCount] = useState(2);
   const { audioExists, deleteRecording, isDeletingRecording } =
     AudioPlayer.useAudioPlayer();
 
@@ -382,9 +458,13 @@ function TranscriptReadyPanel({
               <p>Coming soon</p>
             </TooltipContent>
           </Tooltip>
+          <RegenerateSpeakerControl
+            value={remoteSpeakerCount}
+            onChange={setRemoteSpeakerCount}
+          />
           <button
             type="button"
-            onClick={regenerate}
+            onClick={() => regenerate({ numSpeakers: remoteSpeakerCount })}
             className={cn([
               "flex items-center gap-1 rounded px-1.5 py-0.5",
               "text-[11px] font-medium text-neutral-500",
@@ -438,6 +518,7 @@ function TranscriptEmptyPanel({
   const screen = useTranscriptScreen({ sessionId });
   const { uploadAudio } = useUploadFile(sessionId);
   const regenerate = useRegenerateTranscript(sessionId);
+  const [remoteSpeakerCount, setRemoteSpeakerCount] = useState(2);
 
   const error = screen.kind === "empty" ? screen.error : null;
 
@@ -456,15 +537,21 @@ function TranscriptEmptyPanel({
 
         <div className="flex items-center gap-1.5">
           {hasAudio && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs text-neutral-500"
-              onClick={regenerate}
-            >
-              <RefreshCw size={12} />
-              Generate
-            </Button>
+            <>
+              <RegenerateSpeakerControl
+                value={remoteSpeakerCount}
+                onChange={setRemoteSpeakerCount}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs text-neutral-500"
+                onClick={() => regenerate({ numSpeakers: remoteSpeakerCount })}
+              >
+                <RefreshCw size={12} />
+                Generate
+              </Button>
+            </>
           )}
           <Button
             variant="ghost"

@@ -713,6 +713,8 @@ async function postMatchWithRetry(
   headers: { Authorization: string },
   body: unknown,
 ) {
+  const request = summarizeMatchRequest(body);
+  console.info("[speaker-id] backend match request", request);
   const startedAt = Date.now();
   let attempt = 0;
   while (Date.now() - startedAt <= MATCH_WAIT_BUDGET_MS) {
@@ -734,10 +736,18 @@ async function postMatchWithRetry(
         status: response.status,
         attempt,
         errorText: truncateLog(errorText),
+        request,
       });
       return null;
     }
     const result = (await response.json()) as SpeakerMatchResponse;
+    console.info("[speaker-id] backend match response", {
+      request,
+      attempt,
+      status: result.status,
+      retryAfterMs: result.retry_after_ms ?? null,
+      assignments: summarizeMatchAssignments(result.assignments ?? []),
+    });
     if (result.status !== "processing") {
       return result;
     }
@@ -748,6 +758,68 @@ async function postMatchWithRetry(
     await new Promise((resolve) => setTimeout(resolve, retryAfter));
   }
   return { status: "processing" } satisfies SpeakerMatchResponse;
+}
+
+function summarizeMatchRequest(body: unknown) {
+  if (!isRecord(body)) {
+    return { payloadType: typeof body };
+  }
+  const observations = Array.isArray(body.speaker_observations)
+    ? body.speaker_observations
+    : [];
+  const participants = Array.isArray(body.participants)
+    ? body.participants
+    : [];
+  return {
+    sessionId: stringOrNull(body.session_id),
+    participantCount: participants.length,
+    speakerObservationCount: observations.length,
+    observations: observations.map((observation) => {
+      if (!isRecord(observation)) {
+        return { payloadType: typeof observation };
+      }
+      const windows = Array.isArray(observation.windows)
+        ? observation.windows
+        : [];
+      return {
+        speakerId: stringOrNull(observation.speaker_id),
+        embeddingCount: Array.isArray(observation.embeddings)
+          ? observation.embeddings.length
+          : 0,
+        windowCount: windows.length,
+        context: isRecord(observation.context)
+          ? {
+              channel: stringOrNull(observation.context.channel),
+              speakerIndex:
+                typeof observation.context.speaker_index === "number"
+                  ? observation.context.speaker_index
+                  : null,
+            }
+          : null,
+      };
+    }),
+  };
+}
+
+function summarizeMatchAssignments(
+  assignments: NonNullable<SpeakerMatchResponse["assignments"]>,
+) {
+  return assignments.map((assignment) => ({
+    speakerId: assignment.speaker_id,
+    action: assignment.action,
+    reason: assignment.reason ?? null,
+    candidate: assignment.candidate
+      ? {
+          contactId: assignment.candidate.contact_id,
+          name: assignment.candidate.name ?? null,
+          email: assignment.candidate.email ?? null,
+          score: assignment.candidate.score,
+          margin: assignment.candidate.margin ?? null,
+          confidence: assignment.candidate.confidence,
+          isParticipant: assignment.candidate.is_participant ?? null,
+        }
+      : null,
+  }));
 }
 
 async function postConfirm(
@@ -858,14 +930,30 @@ function applyAutoAssignments(
   );
   for (const assignment of assignments) {
     if (assignment.action !== "auto_label" || !assignment.candidate) {
+      console.info("[speaker-id] auto assignment skipped", {
+        sessionId,
+        speakerId: assignment.speaker_id,
+        action: assignment.action,
+        hasCandidate: !!assignment.candidate,
+        reason: assignment.reason ?? null,
+      });
       continue;
     }
     const speaker = speakerById.get(assignment.speaker_id);
     if (!speaker) {
+      console.info("[speaker-id] auto assignment skipped unknown speaker", {
+        sessionId,
+        speakerId: assignment.speaker_id,
+      });
       continue;
     }
     const humanId = findOrCreateHuman(store, assignment.candidate);
     if (!humanId) {
+      console.info("[speaker-id] auto assignment skipped no local human", {
+        sessionId,
+        speakerId: assignment.speaker_id,
+        contactId: assignment.candidate.contact_id,
+      });
       continue;
     }
     applyVoiceAutoAssignmentHint(
@@ -939,6 +1027,14 @@ function applyVoiceAutoAssignmentHint(
 ) {
   const anchor = findAnchorWord(store, sessionId, speaker);
   if (!anchor) {
+    console.info("[speaker-id] voice auto assignment skipped no anchor", {
+      sessionId,
+      speakerId: speaker.id,
+      humanId,
+      contactId,
+      channel: speaker.speaker.channel,
+      speakerIndex: speaker.speaker.speaker_index ?? null,
+    });
     return;
   }
   const { transcriptId, wordId, hints, words } = anchor;
@@ -947,6 +1043,16 @@ function applyVoiceAutoAssignmentHint(
     speakerIndex: speaker.speaker.speaker_index ?? null,
   };
   if (hasConflictingUserAssignment(hints, words, nextScope)) {
+    console.info("[speaker-id] voice auto assignment skipped user conflict", {
+      sessionId,
+      transcriptId,
+      wordId,
+      speakerId: speaker.id,
+      humanId,
+      contactId,
+      channel: nextScope.channel,
+      speakerIndex: nextScope.speakerIndex,
+    });
     return;
   }
 
@@ -969,6 +1075,16 @@ function applyVoiceAutoAssignmentHint(
     }),
   });
   updateTranscriptHints(store, transcriptId, nextHints);
+  console.info("[speaker-id] voice auto assignment applied", {
+    sessionId,
+    transcriptId,
+    wordId,
+    speakerId: speaker.id,
+    humanId,
+    contactId,
+    channel: nextScope.channel,
+    speakerIndex: nextScope.speakerIndex,
+  });
 }
 
 function findAnchorWord(

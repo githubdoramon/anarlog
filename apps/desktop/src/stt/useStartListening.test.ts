@@ -198,6 +198,12 @@ describe("useStartListening", () => {
     });
     useAuthMock.mockReturnValue({
       getHeaders: vi.fn(() => ({ Authorization: "Bearer token" })),
+      refreshSession: vi.fn(() =>
+        Promise.resolve({
+          access_token: "token",
+          user: { email: "me@example.com" },
+        }),
+      ),
       session: { user: { email: "me@example.com" } },
     });
     enrichSessionParticipantsFromDigitalBrainMock.mockResolvedValue(undefined);
@@ -415,7 +421,7 @@ describe("useStartListening", () => {
     });
   });
 
-  test("keeps realtime local transcription live by filtering unsupported extra spoken languages", async () => {
+  test("keeps realtime local transcription live by filtering unsupported spoken languages", async () => {
     useConfigValueMock.mockImplementation((key) =>
       key === "ai_language" ? "en" : ["ko"],
     );
@@ -440,7 +446,7 @@ describe("useStartListening", () => {
     });
   });
 
-  test("uses the main language for Deepgram live capture when extras are unsupported", async () => {
+  test("uses the first spoken language for Deepgram live capture when extras are unsupported", async () => {
     useConfigValueMock.mockImplementation((key) =>
       key === "ai_language" ? "en" : ["ko"],
     );
@@ -456,7 +462,7 @@ describe("useStartListening", () => {
       (_provider, _model, languages) =>
         Promise.resolve({
           status: "ok",
-          data: languages.length === 1 && languages[0] === "en",
+          data: languages.length === 1 && languages[0] === "ko",
         }),
     );
 
@@ -467,7 +473,7 @@ describe("useStartListening", () => {
     });
 
     expect(startMock.mock.calls[0]?.[0]).toMatchObject({
-      languages: ["en"],
+      languages: ["ko"],
       transcription_mode: undefined,
     });
   });

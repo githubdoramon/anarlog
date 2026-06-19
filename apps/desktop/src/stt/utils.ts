@@ -130,12 +130,13 @@ export function upsertSpeakerAssignment(
       : segmentKey.channel === "RemoteParty"
         ? 1
         : 2;
+  const anchorSpeakerIndex = findSpeakerIndexForWord(hints, anchorWordId);
   const nextScope: SpeakerAssignmentScope = {
     channel,
     speakerIndex:
       typeof segmentKey.speaker_index === "number"
         ? segmentKey.speaker_index
-        : null,
+        : (anchorSpeakerIndex ?? null),
   };
 
   const newHint: SpeakerHintWithId = {
@@ -160,13 +161,29 @@ export function upsertSpeakerAssignment(
     const hintScope = getSpeakerAssignmentScopeForHint(hints, wordsById, hint);
     return !!hintScope && speakerAssignmentScopesConflict(hintScope, nextScope);
   });
+  console.info("[speaker-assignment] upsert requested", {
+    transcriptId,
+    humanId,
+    contactId,
+    anchorWordId,
+    segmentKey,
+    nextScope,
+    existingHintCount: hints.length,
+    conflictingHints: conflictingHints.map((hint) => ({
+      id: hint.id,
+      type: hint.type,
+      wordId: typeof hint.word_id === "string" ? hint.word_id : null,
+      scope: getSpeakerAssignmentScopeForHint(hints, wordsById, hint),
+      value: parseSpeakerAssignmentValue(hint),
+    })),
+  });
   if (
     conflictingHints.length === 1 &&
     isSameUserSpeakerAssignment(conflictingHints[0], {
       humanId,
       contactId,
       channel,
-      speakerIndex: nextScope.speakerIndex,
+      speakerIndex: nextScope.speakerIndex ?? null,
     })
   ) {
     return false;
@@ -194,12 +211,33 @@ export function upsertSpeakerAssignment(
 
   nextHints.push(newHint);
   updateTranscriptHints(store, transcriptId, nextHints);
+  console.info("[speaker-assignment] upsert wrote hints", {
+    transcriptId,
+    humanId,
+    contactId,
+    nextScope,
+    removedHintCount: hints.length - nextHints.length + 1,
+    nextHintCount: nextHints.length,
+    assignments: nextHints
+      .filter(
+        (hint) =>
+          hint.type === "user_speaker_assignment" ||
+          hint.type === "voice_auto_assignment",
+      )
+      .map((hint) => ({
+        id: hint.id,
+        type: hint.type,
+        wordId: typeof hint.word_id === "string" ? hint.word_id : null,
+        scope: getSpeakerAssignmentScopeForHint(hints, wordsById, hint),
+        value: parseSpeakerAssignmentValue(hint),
+      })),
+  });
   return true;
 }
 
 type SpeakerAssignmentScope = {
   channel: number | null | undefined;
-  speakerIndex: number | null;
+  speakerIndex: number | null | undefined;
 };
 
 function getSpeakerAssignmentScopeForHint(
@@ -208,7 +246,7 @@ function getSpeakerAssignmentScopeForHint(
   hint: SpeakerHintWithId,
 ): SpeakerAssignmentScope | null {
   const assignedScope = parseUserSpeakerAssignmentScope(hint);
-  if (assignedScope) {
+  if (assignedScope && assignedScope.speakerIndex !== undefined) {
     return assignedScope;
   }
 
@@ -223,7 +261,7 @@ function getSpeakerAssignmentScopeForHint(
   }
 
   return {
-    channel: word.channel,
+    channel: assignedScope?.channel ?? word.channel,
     speakerIndex: findSpeakerIndexForWord(hints, wordId),
   };
 }
@@ -265,7 +303,10 @@ function findSpeakerIndexForWord(
 function parseUserSpeakerAssignmentScope(
   hint: SpeakerHintWithId,
 ): SpeakerAssignmentScope | null {
-  if (hint.type !== "user_speaker_assignment") {
+  if (
+    hint.type !== "user_speaker_assignment" &&
+    hint.type !== "voice_auto_assignment"
+  ) {
     return null;
   }
 
@@ -289,8 +330,9 @@ function parseUserSpeakerAssignmentScope(
       "channel" in value && typeof value.channel === "number"
         ? value.channel
         : undefined,
-    speakerIndex:
-      "speaker_index" in value && typeof value.speaker_index === "number"
+    speakerIndex: !("speaker_index" in value)
+      ? undefined
+      : typeof value.speaker_index === "number"
         ? value.speaker_index
         : null,
   };

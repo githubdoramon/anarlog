@@ -6,6 +6,9 @@ use owhisper_interface::{ListenParams, batch};
 use super::BatchRunOutput;
 
 const MIN_DIARIZATION_TURN_SECONDS: f64 = 0.25;
+const PAUSE_TURN_GAP_SECONDS: f64 = 0.75;
+const MIN_SENTENCE_TURN_SECONDS: f64 = 1.5;
+const MAX_DIARIZATION_TURN_SECONDS: f64 = 6.0;
 const MIN_AUTO_SPEAKER_SECONDS: f64 = 3.0;
 const MIN_STABLE_SPEAKER_RUN_SECONDS: f64 = 5.0;
 const MAX_PRE_STABLE_ISLAND_SECONDS: f64 = 8.0;
@@ -59,7 +62,11 @@ fn diarize_words_for_channel(
     params: &ListenParams,
     channel_idx: usize,
 ) -> Vec<batch::Word> {
-    if words.len() < 2 || samples.is_empty() || words.iter().any(|word| word.speaker.is_some()) {
+    if words.len() < 2 || samples.is_empty() {
+        return words;
+    }
+
+    if should_keep_existing_speaker_labels(&words, params) {
         return words;
     }
 
@@ -90,14 +97,27 @@ fn diarize_words_for_channel(
         }
     };
 
-    if !force_speaker_count {
-        assignments = merge_short_lived_speakers(&turns, assignments);
-    }
-    assignments = merge_pre_stable_speaker_islands(&turns, assignments);
+    assignments = post_process_assignments(&turns, assignments, force_speaker_count);
 
     apply_turn_speakers_to_words(&mut words, &turns, &assignments);
 
     words
+}
+
+fn should_keep_existing_speaker_labels(words: &[batch::Word], params: &ListenParams) -> bool {
+    let existing_speakers = words
+        .iter()
+        .filter_map(|word| word.speaker)
+        .collect::<std::collections::BTreeSet<_>>();
+
+    if existing_speakers.is_empty() {
+        return false;
+    }
+
+    match params.num_speakers {
+        Some(requested) => existing_speakers.len() == requested as usize,
+        None => true,
+    }
 }
 
 fn should_diarize_channel(channel_idx: usize, channel_count: usize) -> bool {
@@ -114,21 +134,56 @@ struct WordTurn {
 fn word_turns(words: &[batch::Word]) -> Vec<WordTurn> {
     let mut turns = Vec::new();
     let mut start_idx = 0usize;
-    let mut start = words[0].start;
-    let mut end = words[0].end;
 
     for (idx, word) in words.iter().enumerate().skip(1) {
-        let gap = word.start - end;
-        if gap > 0.75 {
-            push_turn(&mut turns, start_idx..idx, start, end);
+        let previous_end = words[idx - 1].end;
+        let gap = word.start - previous_end;
+        if gap > PAUSE_TURN_GAP_SECONDS {
+            push_turn(
+                &mut turns,
+                start_idx..idx,
+                words[start_idx].start,
+                previous_end,
+            );
             start_idx = idx;
-            start = word.start;
+            continue;
         }
-        end = word.end;
+
+        let start = words[start_idx].start;
+        let end = word.end;
+        if idx + 1 < words.len() && should_split_turn_at_word(word, end - start) {
+            push_turn(&mut turns, start_idx..idx + 1, start, end);
+            start_idx = idx + 1;
+        }
     }
 
-    push_turn(&mut turns, start_idx..words.len(), start, end);
+    if start_idx < words.len() {
+        push_turn(
+            &mut turns,
+            start_idx..words.len(),
+            words[start_idx].start,
+            words[words.len() - 1].end,
+        );
+    }
     turns
+}
+
+fn should_split_turn_at_word(word: &batch::Word, duration: f64) -> bool {
+    if duration >= MAX_DIARIZATION_TURN_SECONDS {
+        return true;
+    }
+
+    duration >= MIN_SENTENCE_TURN_SECONDS && ends_sentence(word)
+}
+
+fn ends_sentence(word: &batch::Word) -> bool {
+    let text = word
+        .punctuated_word
+        .as_deref()
+        .unwrap_or(word.word.as_str())
+        .trim_end_matches(|ch: char| ch == '"' || ch == '\'' || ch == ')' || ch == ']');
+
+    text.ends_with('.') || text.ends_with('!') || text.ends_with('?')
 }
 
 fn push_turn(turns: &mut Vec<WordTurn>, word_range: std::ops::Range<usize>, start: f64, end: f64) {
@@ -608,6 +663,18 @@ fn apply_turn_speakers_to_words(
     }
 }
 
+fn post_process_assignments(
+    turns: &[WordTurn],
+    assignments: Vec<usize>,
+    force_speaker_count: bool,
+) -> Vec<usize> {
+    if force_speaker_count {
+        return assignments;
+    }
+
+    merge_pre_stable_speaker_islands(turns, merge_short_lived_speakers(turns, assignments))
+}
+
 fn nearest_turn_speaker(
     word: &batch::Word,
     turns: &[WordTurn],
@@ -808,6 +875,18 @@ mod tests {
         }
     }
 
+    fn punctuated_word(start: f64, end: f64, text: &str) -> batch::Word {
+        batch::Word {
+            word: text.trim_end_matches(['.', '!', '?']).to_string(),
+            start,
+            end,
+            confidence: 1.0,
+            channel: 0,
+            speaker: None,
+            punctuated_word: Some(text.to_string()),
+        }
+    }
+
     #[test]
     fn word_turns_split_on_pause_and_keep_short_utterances() {
         let turns = word_turns(&[
@@ -821,6 +900,37 @@ mod tests {
         assert_eq!(turns[0].word_range, 0..2);
         assert_eq!(turns[1].word_range, 2..3);
         assert_eq!(turns[2].word_range, 3..4);
+    }
+
+    #[test]
+    fn word_turns_split_long_continuous_speech() {
+        let turns = word_turns(&[
+            word(0.0, 1.0),
+            word(1.1, 2.0),
+            word(2.1, 3.0),
+            word(3.1, 4.0),
+            word(4.1, 5.0),
+            word(5.1, 6.2),
+            word(6.3, 7.0),
+        ]);
+
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].word_range, 0..6);
+        assert_eq!(turns[1].word_range, 6..7);
+    }
+
+    #[test]
+    fn word_turns_split_at_sentence_boundary() {
+        let turns = word_turns(&[
+            punctuated_word(0.0, 0.8, "Good"),
+            punctuated_word(0.9, 1.7, "morning."),
+            punctuated_word(1.8, 2.3, "Yes"),
+            punctuated_word(2.4, 3.0, "exactly."),
+        ]);
+
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].word_range, 0..2);
+        assert_eq!(turns[1].word_range, 2..4);
     }
 
     #[test]
@@ -839,6 +949,36 @@ mod tests {
         assert!(!should_diarize_channel(0, 2));
         assert!(should_diarize_channel(1, 2));
         assert!(should_diarize_channel(0, 1));
+    }
+
+    #[test]
+    fn forced_speaker_count_overrides_mismatched_existing_labels() {
+        let mut words = vec![word(0.0, 1.0), word(2.0, 3.0)];
+        words[0].speaker = Some(0);
+        words[1].speaker = Some(0);
+
+        assert!(!should_keep_existing_speaker_labels(
+            &words,
+            &ListenParams {
+                num_speakers: Some(2),
+                ..Default::default()
+            },
+        ));
+    }
+
+    #[test]
+    fn keeps_existing_labels_when_forced_count_matches() {
+        let mut words = vec![word(0.0, 1.0), word(2.0, 3.0)];
+        words[0].speaker = Some(0);
+        words[1].speaker = Some(1);
+
+        assert!(should_keep_existing_speaker_labels(
+            &words,
+            &ListenParams {
+                num_speakers: Some(2),
+                ..Default::default()
+            },
+        ));
     }
 
     #[test]
@@ -967,6 +1107,41 @@ mod tests {
         let assignments = merge_pre_stable_speaker_islands(&turns, vec![0, 1, 0, 1, 0]);
 
         assert_eq!(assignments, vec![0, 0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn forced_speaker_count_keeps_pre_stable_islands() {
+        let turns = vec![
+            WordTurn {
+                word_range: 0..1,
+                start: 0.0,
+                end: 6.0,
+            },
+            WordTurn {
+                word_range: 1..2,
+                start: 8.0,
+                end: 10.0,
+            },
+            WordTurn {
+                word_range: 2..3,
+                start: 12.0,
+                end: 18.0,
+            },
+            WordTurn {
+                word_range: 3..4,
+                start: 60.0,
+                end: 67.0,
+            },
+            WordTurn {
+                word_range: 4..5,
+                start: 69.0,
+                end: 75.0,
+            },
+        ];
+        let assignments = vec![0, 1, 0, 1, 0];
+        let merged = post_process_assignments(&turns, assignments.clone(), true);
+
+        assert_eq!(merged, assignments);
     }
 
     #[test]

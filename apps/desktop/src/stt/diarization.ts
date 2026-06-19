@@ -136,9 +136,11 @@ export function getBatchSpeakerBounds(
     return undefined;
   }
 
-  return expectedRemoteSpeakerCount === 1
-    ? { numSpeakers: 1 }
-    : { maxSpeakers: expectedRemoteSpeakerCount };
+  if (expectedRemoteSpeakerCount === 1) {
+    return undefined;
+  }
+
+  return { maxSpeakers: expectedRemoteSpeakerCount };
 }
 
 export function applyProviderSpeakerCount(
@@ -150,6 +152,14 @@ export function applyProviderSpeakerCount(
   const normalizedCount = Math.max(1, Math.floor(count));
   const words = parseTranscriptWords(store, transcriptId);
   const hints = parseTranscriptHints(store, transcriptId);
+  console.info("[diarization] apply provider speaker count requested", {
+    transcriptId,
+    channel,
+    requestedCount: count,
+    normalizedCount,
+    wordCount: words.length,
+    hintCount: hints.length,
+  });
   const wordById = new Map(
     words
       .filter((word): word is CompleteWord => isCompleteWord(word))
@@ -179,6 +189,14 @@ export function applyProviderSpeakerCount(
     );
 
   if (providerHints.length === 0) {
+    console.info(
+      "[diarization] apply provider speaker count skipped no hints",
+      {
+        transcriptId,
+        channel,
+        normalizedCount,
+      },
+    );
     return;
   }
 
@@ -190,6 +208,13 @@ export function applyProviderSpeakerCount(
     })),
     normalizedCount,
   );
+  console.info("[diarization] apply provider speaker count remap", {
+    transcriptId,
+    channel,
+    normalizedCount,
+    before: summarizeProviderHints(providerHints),
+    remap: Object.fromEntries(remap),
+  });
 
   const nextHints = hints.map((hint) => {
     const data = parseProviderSpeakerHint(hint);
@@ -218,6 +243,12 @@ export function applyProviderSpeakerCount(
   });
 
   updateTranscriptHints(store, transcriptId, nextHints);
+  console.info("[diarization] apply provider speaker count wrote hints", {
+    transcriptId,
+    channel,
+    normalizedCount,
+    after: summarizeStoredProviderHints(nextHints, wordById, channel),
+  });
 }
 
 export type ProviderSpeakerStat = {
@@ -277,7 +308,7 @@ export function getProviderSpeakerStats(
   }
 
   for (const hint of hints) {
-    const assignment = parseUserSpeakerAssignment(hint);
+    const assignment = parseSpeakerAssignment(hint);
     if (!assignment || typeof hint.word_id !== "string") {
       continue;
     }
@@ -336,7 +367,7 @@ export function getDirectMicSpeakerStat(
   }
 
   for (const hint of hints) {
-    const assignment = parseUserSpeakerAssignment(hint);
+    const assignment = parseSpeakerAssignment(hint);
     if (!assignment) {
       continue;
     }
@@ -399,14 +430,17 @@ function parseProviderSpeakerHint(
   }
 }
 
-function parseUserSpeakerAssignment(hint: SpeakerHintWithId):
+function parseSpeakerAssignment(hint: SpeakerHintWithId):
   | {
       human_id: string;
       channel?: number;
       speaker_index?: number | null;
     }
   | undefined {
-  if (hint.type !== "user_speaker_assignment") {
+  if (
+    hint.type !== "user_speaker_assignment" &&
+    hint.type !== "voice_auto_assignment"
+  ) {
     return undefined;
   }
 
@@ -439,6 +473,51 @@ function parseUserSpeakerAssignment(hint: SpeakerHintWithId):
           : null,
     };
   }
+}
+
+function summarizeProviderHints(
+  providerHints: Array<{
+    data: ProviderSpeakerHintValue;
+    word: CompleteWord;
+  }>,
+) {
+  const bySpeaker = new Map<
+    number,
+    { wordCount: number; durationMs: number }
+  >();
+  for (const entry of providerHints) {
+    const current = bySpeaker.get(entry.data.speaker_index) ?? {
+      wordCount: 0,
+      durationMs: 0,
+    };
+    current.wordCount += 1;
+    current.durationMs += Math.max(0, entry.word.end_ms - entry.word.start_ms);
+    bySpeaker.set(entry.data.speaker_index, current);
+  }
+  return Object.fromEntries(bySpeaker);
+}
+
+function summarizeStoredProviderHints(
+  hints: SpeakerHintWithId[],
+  wordById: Map<string, CompleteWord>,
+  channel: number,
+) {
+  const bySpeaker = new Map<number, number>();
+  for (const hint of hints) {
+    const data = parseProviderSpeakerHint(hint);
+    if (!data || typeof hint.word_id !== "string") {
+      continue;
+    }
+    const word = wordById.get(hint.word_id);
+    if (!word || word.channel !== channel) {
+      continue;
+    }
+    bySpeaker.set(
+      data.speaker_index,
+      (bySpeaker.get(data.speaker_index) ?? 0) + 1,
+    );
+  }
+  return Object.fromEntries(bySpeaker);
 }
 
 function buildSpeakerIndexRemap(

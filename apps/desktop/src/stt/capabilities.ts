@@ -69,7 +69,7 @@ export function getTranscriptionLanguages(
   const seen = new Set<string>();
   const languages: string[] = [];
 
-  for (const language of [mainLanguage, ...(spokenLanguages ?? [])]) {
+  for (const language of [...(spokenLanguages ?? []), mainLanguage]) {
     if (!language) {
       continue;
     }

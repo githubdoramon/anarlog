@@ -2,6 +2,7 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 import { and, eq, lte, meetingTranscriptUploadQueue, or } from "@hypr/db";
 
+import { getUnidentifiedSpeakerIds } from "./identity";
 import {
   buildDigitalBrainTranscriptionPayload,
   type DigitalBrainPayloadStore,
@@ -568,15 +569,6 @@ function postEndpoint(serverUrl: string) {
 
 function hasIdentifiedSpeakers(payload: DigitalBrainTranscriptionPayload) {
   return getUnidentifiedSpeakerIds(payload).length === 0;
-}
-
-function getUnidentifiedSpeakerIds(payload: DigitalBrainTranscriptionPayload) {
-  return payload.speaker_identities.flatMap((speaker) => {
-    if (speaker.identity.contact_id) {
-      return [];
-    }
-    return [speaker.id];
-  });
 }
 
 function log(event: string, data?: Record<string, unknown>) {
