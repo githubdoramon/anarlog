@@ -426,8 +426,6 @@ function TranscriptReadyPanel({
   fillHeight: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const regenerate = useRegenerateTranscript(sessionId);
-  const [remoteSpeakerCount, setRemoteSpeakerCount] = useState(2);
   const { audioExists, deleteRecording, isDeletingRecording } =
     AudioPlayer.useAudioPlayer();
 
@@ -458,22 +456,6 @@ function TranscriptReadyPanel({
               <p>Coming soon</p>
             </TooltipContent>
           </Tooltip>
-          <RegenerateSpeakerControl
-            value={remoteSpeakerCount}
-            onChange={setRemoteSpeakerCount}
-          />
-          <button
-            type="button"
-            onClick={() => regenerate({ numSpeakers: remoteSpeakerCount })}
-            className={cn([
-              "flex items-center gap-1 rounded px-1.5 py-0.5",
-              "text-[11px] font-medium text-neutral-500",
-              "transition-colors hover:bg-neutral-200/60 hover:text-neutral-700",
-            ])}
-          >
-            <RefreshCw size={10} />
-            Regenerate
-          </button>
         </div>
         {audioExists ? (
           <button

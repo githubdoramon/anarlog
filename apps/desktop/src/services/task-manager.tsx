@@ -24,7 +24,8 @@ import {
 import * as main from "~/store/tinybase/store/main";
 import * as settings from "~/store/tinybase/store/settings";
 
-const CALENDAR_SYNC_INTERVAL = 60 * 1000; // 60 sec
+const CALENDAR_SYNC_INTERVAL_MS = 60 * 1000;
+const CALENDAR_SYNC_MAX_DURATION_MS = 5 * 60 * 1000;
 
 export function TaskManager() {
   const store = main.UI.useStore(main.STORE_ID);
@@ -33,15 +34,25 @@ export function TaskManager() {
   const settingsStore = settings.UI.useStore(settings.STORE_ID);
   const notifiedEventsRef = useRef<NotifiedEventsMap>(new Map());
 
-  useSetTask(CALENDAR_SYNC_TASK_ID, async () => {
-    await syncCalendarEvents(
-      store as main.Store,
-      queries as Queries<main.Schemas>,
-    );
-  }, [store, queries, settingsStore]);
+  useSetTask(
+    CALENDAR_SYNC_TASK_ID,
+    async () => {
+      try {
+        await syncCalendarEvents(
+          store as main.Store,
+          queries as Queries<main.Schemas>,
+        );
+      } catch (error) {
+        console.error("[calendar-sync] Error running calendar sync:", error);
+      }
+    },
+    [store, queries, settingsStore],
+    undefined,
+    { maxDuration: CALENDAR_SYNC_MAX_DURATION_MS },
+  );
 
   useScheduleTaskRun(CALENDAR_SYNC_TASK_ID, undefined, 0, {
-    repeatDelay: CALENDAR_SYNC_INTERVAL,
+    repeatDelay: CALENDAR_SYNC_INTERVAL_MS,
   });
 
   const scheduleCalendarSync = useScheduleTaskRunCallback(

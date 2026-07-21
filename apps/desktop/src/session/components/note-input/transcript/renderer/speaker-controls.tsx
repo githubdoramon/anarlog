@@ -117,8 +117,7 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
   const canApplyCurrentTranscript = speakerStats.length > 0;
   const suggestedSpeakerCount = Math.max(
     1,
-    detectedSpeakerCount,
-    expectedCount ?? 0,
+    expectedCount ?? detectedSpeakerCount,
   );
 
   useEffect(() => {
@@ -408,8 +407,8 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
           {speakerStats.map((speaker) => (
             <SpeakerAssignmentRow
               transcriptId={transcriptId}
-              key={speaker.speakerIndex}
-              label={`Speaker ${speaker.speakerIndex + 1}`}
+              key={speaker.speakerIndex ?? "remote-channel"}
+              label={formatRemoteSpeakerLabel(speaker.speakerIndex)}
               durationMs={speaker.durationMs}
               assignedHumanId={speaker.assignedHumanId}
               participants={participants}
@@ -428,6 +427,10 @@ export function SpeakerControls({ transcriptId }: { transcriptId: string }) {
       )}
     </div>
   );
+}
+
+function formatRemoteSpeakerLabel(speakerIndex: number | null) {
+  return `Speaker ${speakerIndex == null ? 1 : speakerIndex + 1}`;
 }
 
 function SpeakerAssignmentRow({

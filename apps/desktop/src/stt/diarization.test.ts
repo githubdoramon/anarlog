@@ -89,9 +89,9 @@ function createParticipantStore(
 }
 
 describe("getBatchSpeakerBounds", () => {
-  it("only caps multi-speaker calls", () => {
+  it("forces one speaker and caps multi-speaker calls", () => {
     expect(getBatchSpeakerBounds(undefined)).toEqual(undefined);
-    expect(getBatchSpeakerBounds(1)).toEqual(undefined);
+    expect(getBatchSpeakerBounds(1)).toEqual({ numSpeakers: 1 });
     expect(getBatchSpeakerBounds(3)).toEqual({ maxSpeakers: 3 });
   });
 });
@@ -270,6 +270,55 @@ describe("applyProviderSpeakerCount", () => {
         durationMs: 1000,
         anchorWordId: "remote-word",
         assignedHumanId: "hugo",
+      },
+    ]);
+  });
+
+  it("uses word speaker indexes when provider speaker hints are missing", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "remote-word",
+          text: " hello",
+          start_ms: 0,
+          end_ms: 1000,
+          channel: 1,
+          speaker_index: 0,
+        },
+      ]),
+      speaker_hints: JSON.stringify([]),
+    });
+
+    expect(getProviderSpeakerStats(store, "transcript-1", 1)).toEqual([
+      {
+        speakerIndex: 0,
+        wordCount: 1,
+        durationMs: 1000,
+        anchorWordId: "remote-word",
+      },
+    ]);
+  });
+
+  it("exposes unindexed remote channel words as a channel speaker", () => {
+    const store = createStore({
+      words: JSON.stringify([
+        {
+          id: "remote-word",
+          text: " hello",
+          start_ms: 0,
+          end_ms: 1000,
+          channel: 1,
+        },
+      ]),
+      speaker_hints: JSON.stringify([]),
+    });
+
+    expect(getProviderSpeakerStats(store, "transcript-1", 1)).toEqual([
+      {
+        speakerIndex: null,
+        wordCount: 1,
+        durationMs: 1000,
+        anchorWordId: "remote-word",
       },
     ]);
   });
